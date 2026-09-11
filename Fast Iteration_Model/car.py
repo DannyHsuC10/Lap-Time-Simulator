@@ -115,7 +115,7 @@ class Car:
 
         self.start_resis = 20
 
-        self.T_rate = [1.0,1.0,1.0,1.0]
+        self.T_rate = [0.67,0.67,1.0,1.0]
         self.drive_controllers = [
             TractionController(
                 self,

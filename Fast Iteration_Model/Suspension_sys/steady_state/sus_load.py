@@ -2,8 +2,22 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 import sys
+from dataclasses import dataclass
 
 OUTPUT_DIR = Path(__file__).parent
+
+
+@dataclass(frozen=True)
+class WheelLoadStiffnessResult:
+    loads: np.ndarray
+    theta: np.ndarray
+    heave: float
+    roll_angle: float
+    pitch_angle: float
+    qh: float
+    qp: float
+    qr: float
+
 
 def wheel_load_stiffness(
     mass,
@@ -20,6 +34,8 @@ def wheel_load_stiffness(
     k_heave_rear,
     k_roll_front,
     k_roll_rear,
+    yaw=0.0,
+    return_state=False,
 ):
     """
     Steady-state wheel loads using suspension stiffness.
@@ -51,10 +67,17 @@ def wheel_load_stiffness(
     k_roll_rear : float
         Rear axle roll stiffness [Nm/rad]
 
+    yaw : float
+        Vehicle heading [rad], passed through to theta[3].
+
+    return_state : bool
+        False keeps the historical return value: ndarray [FL, FR, RL, RR].
+        True returns WheelLoadStiffnessResult with loads and estimated attitude.
+
     Returns
     -------
-    ndarray
-        [FL, FR, RL, RR]
+    ndarray or WheelLoadStiffnessResult
+        Wheel loads, optionally with simplified steady-state attitude.
     """
 
     # -------------------------------------------------------
@@ -104,5 +127,31 @@ def wheel_load_stiffness(
     RL = F_rear / 2 - dF_rear_roll
     RR = F_rear / 2 + dF_rear_roll
 
-    return np.array([FL, FR, RL, RR])
+    K_roll_front = 2 * k_roll_front * (track_front/2)**2
+    K_roll_rear  = 2 * k_roll_rear * (track_rear/2)**2
+
+    roll_angle = M_roll / (K_roll_front + K_roll_rear)
+
+    K_pitch = k_heave_front + k_heave_rear
+
+    pitch_angle = M_pitch / K_pitch
+
+    heave = aero / K_pitch
+
+    loads = np.array([FL, FR, RL, RR])
+    theta = np.array([roll_angle, roll_angle, pitch_angle, yaw])
+
+    if return_state:
+        return WheelLoadStiffnessResult(
+            loads=loads,
+            theta=theta,
+            heave=heave,
+            roll_angle=roll_angle,
+            pitch_angle=pitch_angle,
+            qh=heave,
+            qp=pitch_angle,
+            qr=roll_angle,
+        )
+
+    return loads
 

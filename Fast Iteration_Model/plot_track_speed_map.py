@@ -14,7 +14,7 @@ from car import Car
 from data.Simulation_Logger import SimulationLogger
 from Pacejka_tire_model.tire_mapping_tool import TireForceMap
 from power_brake_sys.brake import brake as brake_torque
-from power_brake_sys.motor import Throttle_command
+from power_brake_sys.motor import Motor_output_torque, Throttle_command
 from Suspension_sys.steady_state.sus_load import wheel_load_stiffness
 from track.track_segments import SegmentTrack
 from Vehicle_status import Vehicle_state
@@ -23,27 +23,28 @@ from Vehicle_status import Vehicle_state
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_SEGMENT_CSV = BASE_DIR / "track" / "fsae_A_2025.csv"
 DEFAULT_TIRE_MAP = BASE_DIR / "Pacejka_tire_model" / "tire_force_map.pkl"
-DEFAULT_PLANNED_OUTPUT = BASE_DIR / "track" / "track_speed_map.png"
-DEFAULT_LAP_DATA_OUTPUT = BASE_DIR / "track" / "track_speed_map_lap_data.pkl"
-DEFAULT_VEHICLE_MASS = 320.0
+DEFAULT_PLANNED_OUTPUT = BASE_DIR / "data" / "track_speed_map.png"
+DEFAULT_LAP_DATA_OUTPUT = BASE_DIR / "data" / "track_speed_map_lap_data.pkl"
 DEFAULT_MAX_STRAIGHT_SPEED = 30.0
 GRAVITY = 9.81
-CG_HEIGHT = 0.3016451511
-WHEELBASE = 1.53
-LF = 0.7498400000000001
-LR = WHEELBASE - LF
-FRONT_STATIC_RATIO = LR / WHEELBASE
-TRACK_FRONT = 1.28
-TRACK_REAR = 1.24
-K_HEAVE_FRONT = 56000.0
-K_HEAVE_REAR = 44800.0
-K_ROLL_FRONT = 80000.0
-K_ROLL_REAR = 64000.0
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 ACCEL_CACHE: dict[tuple[int, str, float, float], float] = {}
+
+
+def log_step(message: str) -> None:
+    print(f"[plot_track_speed_map] {message}", flush=True)
+
+
+def wheel_rate_from_kc(car: Car, shock_index: int, corner_count: float = 4.0) -> float:
+    kc = car.shock_list[shock_index]
+    return float(
+        kc.spring.stiffness(0.0)
+        * kc.motion_ratio.ratio(0.0) ** 2
+        * corner_count
+    )
 
 
 @dataclass(frozen=True)
@@ -67,23 +68,178 @@ class PowerBrakeSystemLimit:
 
     def __init__(self, car: Car):
         self.car = car
+        self.max_brake_torque = -np.asarray(
+            brake_torque(1.0, self.car),
+            dtype=float,
+        )
 
     def drive_accel_limit(self, speed: float) -> float:
-        omega = np.full(4, max(speed, 0.0) / self.car.R_tire, dtype=float)
-        wheel_torque = np.asarray(
-            Throttle_command(omega, self.car, cmd=1.0),
-            dtype=float,
-        )
-        drive_force = np.maximum(wheel_torque / self.car.R_tire, 0.0)
+        drive_force = self.max_drive_force_distribution(speed)
         return float(np.sum(drive_force) / self.car.m)
 
-    def brake_decel_limit(self, speed: float) -> float:
-        wheel_torque = np.asarray(
-            brake_torque(max(speed, 1e-3), self.car),
-            dtype=float,
+    def max_drive_torque_distribution(
+        self,
+        speed: float,
+        loaded_radius: np.ndarray | None = None,
+    ) -> np.ndarray:
+        omega = np.full(4, max(speed, 0.0) / self.car.R_tire, dtype=float)
+        return np.maximum(
+            np.asarray(Throttle_command(omega, self.car, cmd=self.car.T_rate), dtype=float),
+            0.0,
         )
-        brake_force = np.maximum(-wheel_torque / self.car.R_tire, 0.0)
-        return float(np.sum(brake_force) / self.car.m)
+
+    def max_drive_force_distribution(
+        self,
+        speed: float,
+        loaded_radius: np.ndarray | None = None,
+    ) -> np.ndarray:
+        if loaded_radius is None:
+            loaded_radius = np.full(4, self.car.R_tire, dtype=float)
+        loaded_radius = np.maximum(np.asarray(loaded_radius, dtype=float), 1e-9)
+        wheel_torque = self.max_drive_torque_distribution(speed, loaded_radius)
+        return wheel_torque / loaded_radius
+
+    def scale_limited_drive_force(
+        self,
+        speed: float,
+        tire_drive_fx_limit: np.ndarray,
+        loaded_radius: np.ndarray | None = None,
+    ) -> np.ndarray:
+        base_force = self.max_drive_force_distribution(speed, loaded_radius)
+        active = base_force > 1e-9
+
+        if not np.any(active):
+            return np.zeros(4, dtype=float)
+
+        scale = float(
+            np.min(
+                np.divide(
+                    tire_drive_fx_limit[active],
+                    base_force[active],
+                    out=np.zeros_like(base_force[active]),
+                    where=base_force[active] > 1e-9,
+                )
+            )
+        )
+        scale = float(np.clip(scale, 0.0, 1.0))
+        return base_force * scale
+
+    def distribute_drive_force(
+        self,
+        speed: float,
+        total_fx: float,
+        loaded_radius: np.ndarray | None = None,
+    ) -> np.ndarray:
+        base_force = self.max_drive_force_distribution(speed, loaded_radius)
+        base_sum = float(np.sum(base_force))
+
+        if base_sum <= 1e-9:
+            return np.zeros(4, dtype=float)
+
+        scale = max(float(total_fx), 0.0) / base_sum
+        return base_force * scale
+
+    def drive_command_from_force(
+        self,
+        speed: float,
+        total_fx: float,
+        loaded_radius: np.ndarray | None = None,
+    ) -> float:
+        base_force = self.max_drive_force_distribution(speed, loaded_radius)
+        base_sum = float(np.sum(base_force))
+
+        if base_sum <= 1e-9:
+            return 0.0
+
+        return float(np.clip(max(float(total_fx), 0.0) / base_sum, 0.0, 1.0))
+
+    def max_brake_torque_distribution(self) -> np.ndarray:
+        return self.max_brake_torque.copy()
+
+    def max_brake_force_distribution(
+        self,
+        loaded_radius: np.ndarray | None = None,
+    ) -> np.ndarray:
+        if loaded_radius is None:
+            loaded_radius = np.full(4, self.car.R_tire, dtype=float)
+        loaded_radius = np.maximum(np.asarray(loaded_radius, dtype=float), 1e-9)
+        return -self.max_brake_torque_distribution() / loaded_radius
+
+    def scale_limited_brake_force(
+        self,
+        tire_brake_fx_limit: np.ndarray,
+        loaded_radius: np.ndarray | None = None,
+    ) -> np.ndarray:
+        base_force = self.max_brake_force_distribution(loaded_radius)
+        base_capacity = -base_force
+        tire_capacity = np.maximum(-np.asarray(tire_brake_fx_limit, dtype=float), 0.0)
+        active = base_capacity > 1e-9
+
+        if not np.any(active):
+            return np.zeros(4, dtype=float)
+
+        scale = float(
+            np.min(
+                np.divide(
+                    tire_capacity[active],
+                    base_capacity[active],
+                    out=np.zeros_like(base_capacity[active]),
+                    where=base_capacity[active] > 1e-9,
+                )
+            )
+        )
+        scale = float(np.clip(scale, 0.0, 1.0))
+        return base_force * scale
+
+    def distribute_brake_force(
+        self,
+        total_fx: float,
+        loaded_radius: np.ndarray | None = None,
+    ) -> np.ndarray:
+        base_force = self.max_brake_force_distribution(loaded_radius)
+        base_sum = float(np.sum(-base_force))
+
+        if base_sum <= 1e-9:
+            return np.zeros(4, dtype=float)
+
+        scale = max(-float(total_fx), 0.0) / base_sum
+        return base_force * scale
+
+    def brake_command_from_force(
+        self,
+        total_fx: float,
+        loaded_radius: np.ndarray | None = None,
+    ) -> float:
+        base_force = self.max_brake_force_distribution(loaded_radius)
+        base_sum = float(np.sum(-base_force))
+
+        if base_sum <= 1e-9:
+            return 0.0
+
+        return float(np.clip(max(-float(total_fx), 0.0) / base_sum, 0.0, 1.0))
+
+    def brake_decel_limit(self, speed: float) -> float:
+        brake_force = self.max_brake_force_distribution()
+        return float(np.sum(-brake_force) / self.car.m)
+
+
+@dataclass(frozen=True)
+class WheelLoadState:
+    loads: np.ndarray
+    theta: np.ndarray
+    heave: float
+    aero_result: dict[str, float]
+
+
+@dataclass(frozen=True)
+class TireSlipSolution:
+    sa_deg: np.ndarray
+    sl: np.ndarray
+    mx: np.ndarray
+    mz: np.ndarray
+    rrt: np.ndarray
+    fx_error: np.ndarray
+    fy_error: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -157,16 +313,19 @@ class AeroTireLimitMap:
     fz_axis: np.ndarray
     max_fy_axis: np.ndarray
     fx_lookups: tuple[TireFxLimitLookup, ...]
+    tire_map: TireForceMap
     static_fz_per_tire: float
+    car: Car
     aero: ModalAeroModel
     aero_config: AeroConfig
     gravity: float = GRAVITY
+    attitude_iterations: int = 3
 
     @classmethod
     def build(
         cls,
         map_path: str | Path,
-        vehicle_mass: float = DEFAULT_VEHICLE_MASS,
+        car: Car,
         max_speed: float = DEFAULT_MAX_STRAIGHT_SPEED,
         gravity: float = GRAVITY,
         aero: ModalAeroModel | None = None,
@@ -175,9 +334,9 @@ class AeroTireLimitMap:
     ) -> "AeroTireLimitMap":
         tire_map = TireForceMap.load(map_path)
         if aero is None:
-            aero = default_aero_model()
+            aero = car.aero
 
-        static_fz = vehicle_mass * gravity / 4.0
+        static_fz = car.m * gravity / 4.0
         mean_max_fz = tire_normal_load_per_tire(
             speed=max_speed,
             static_fz_per_tire=static_fz,
@@ -205,10 +364,13 @@ class AeroTireLimitMap:
             fz_axis=fz_axis,
             max_fy_axis=max_fy_axis,
             fx_lookups=fx_lookups,
+            tire_map=tire_map,
             static_fz_per_tire=static_fz,
+            car=car,
             aero=aero,
             aero_config=aero_config,
             gravity=gravity,
+            attitude_iterations=3,
         )
 
     def fz_at_speed(self, speed: float) -> float:
@@ -216,36 +378,79 @@ class AeroTireLimitMap:
         return float(np.mean(loads))
 
     def wheel_loads(self, speed: float, ax: float, ay: float) -> np.ndarray:
-        return np.maximum(
-            wheel_load_stiffness(
-                mass=DEFAULT_VEHICLE_MASS,
+        return self.wheel_load_state(speed=speed, ax=ax, ay=ay).loads
+
+    def wheel_load_state(
+        self,
+        speed: float,
+        ax: float,
+        ay: float,
+        yaw: float = 0.0,
+    ) -> WheelLoadState:
+        aero_result = self.aero_result_from_attitude(speed, 0.0, 0.0, 0.0)
+        load_state = None
+
+        for _ in range(max(int(self.attitude_iterations), 1)):
+            load_state = wheel_load_stiffness(
+                mass=self.car.m,
                 g=self.gravity,
-                aero=self.downforce_at_speed(speed),
+                aero=0.0 if not self.aero_config.enabled else float(aero_result["F_down"]),
                 ax=ax,
                 ay=ay,
-                cg_height=CG_HEIGHT,
-                wheelbase=WHEELBASE,
-                front_ratio=FRONT_STATIC_RATIO,
-                track_front=TRACK_FRONT,
-                track_rear=TRACK_REAR,
-                k_heave_front=K_HEAVE_FRONT,
-                k_heave_rear=K_HEAVE_REAR,
-                k_roll_front=K_ROLL_FRONT,
-                k_roll_rear=K_ROLL_REAR,
-            ),
-            1.0,
+                cg_height=self.car.h_cg,
+                wheelbase=self.car.l,
+                front_ratio=self.car.lr / self.car.l,
+                track_front=self.car.tf,
+                track_rear=self.car.tr,
+                k_heave_front=wheel_rate_from_kc(self.car, 0),
+                k_heave_rear=wheel_rate_from_kc(self.car, 1),
+                k_roll_front=wheel_rate_from_kc(self.car, 2),
+                k_roll_rear=wheel_rate_from_kc(self.car, 3),
+                yaw=yaw,
+                return_state=True,
+            )
+            aero_result = self.aero_result_from_attitude(
+                speed,
+                load_state.qh,
+                load_state.qp,
+                load_state.qr,
+            )
+
+        return WheelLoadState(
+            loads=np.maximum(load_state.loads, 1.0),
+            theta=load_state.theta,
+            heave=float(load_state.heave),
+            aero_result=aero_result,
         )
 
-    def downforce_at_speed(self, speed: float) -> float:
+    def aero_result_from_attitude(
+        self,
+        speed: float,
+        qh: float,
+        qp: float,
+        qr: float,
+    ) -> dict[str, float]:
         if not self.aero_config.enabled:
-            return 0.0
-        result = self.aero.calculate_from_modal(
-            speed,
-            self.aero_config.qh,
-            self.aero_config.qp,
-            self.aero_config.qr,
-        )
-        return float(result["F_down"])
+            return {
+                "F_down": 0.0,
+                "F_drag": 0.0,
+                "F_FL": 0.0,
+                "F_FR": 0.0,
+                "F_RL": 0.0,
+                "F_RR": 0.0,
+                "COP_x": 0.0,
+                "COP_y": 0.0,
+                "CL": 0.0,
+                "CD": 0.0,
+                "qh": qh,
+                "qp": qp,
+                "qr": qr,
+            }
+
+        return self.aero.calculate_from_modal(speed, qh, qp, qr)
+
+    def downforce_at_speed(self, speed: float) -> float:
+        return float(self.wheel_load_state(speed=speed, ax=0.0, ay=0.0).aero_result["F_down"])
 
     def max_fy_at_speed(self, speed: float) -> float:
         fz = np.clip(self.fz_at_speed(speed), self.fz_axis[0], self.fz_axis[-1])
@@ -296,14 +501,20 @@ class SpeedPlan:
     phase: np.ndarray
     fz_per_tire: np.ndarray
     wheel_loads: np.ndarray
+    theta: np.ndarray
+    heave: np.ndarray
     downforce: np.ndarray
+    drag: np.ndarray
+    cop: np.ndarray
+    cl: np.ndarray
+    cd: np.ndarray
     drive_system_accel_limit: np.ndarray
     brake_system_decel_limit: np.ndarray
 
 
 def load_tire_lateral_limit(
     map_path: str | Path = DEFAULT_TIRE_MAP,
-    vehicle_mass: float | None = None,
+    car: Car | None = None,
     gravity: float = 9.81,
     normal_load_per_tire: float | None = None,
 ) -> TireLateralLimit:
@@ -317,9 +528,9 @@ def load_tire_lateral_limit(
     tire_map = TireForceMap.load(map_path)
 
     if normal_load_per_tire is None:
-        if vehicle_mass is None:
-            vehicle_mass = DEFAULT_VEHICLE_MASS
-        normal_load_per_tire = vehicle_mass * gravity / 4.0
+        if car is None:
+            raise ValueError("car is required when normal_load_per_tire is not given")
+        normal_load_per_tire = car.m * gravity / 4.0
 
     alpha_grid = np.asarray(tire_map.alpha_axis_deg, dtype=float)
     kappa_zero = float(tire_map.kappa_axis[np.argmin(np.abs(tire_map.kappa_axis))])
@@ -341,31 +552,6 @@ def load_tire_lateral_limit(
         max_lateral_force_per_tire=max_lateral_force,
         mu_y=float(mu_y),
         lateral_accel_limit=float(mu_y * gravity),
-    )
-
-
-def default_aero_model() -> ModalAeroModel:
-    """Return the same fixed-attitude aero parameters used by car.Car."""
-
-    return ModalAeroModel(
-        rho=1.225,
-        area=1.2,
-        CL0=-2.4,
-        CD0=1.8,
-        Kh=-5.0,
-        Kp=20.0,
-        Kr=5.0,
-        Khh=50.0,
-        Kpp=30.0,
-        Kd_h=0.0,
-        Kd_p=0.0,
-        Kd_r=0.0,
-        front_balance=0.45,
-        K_balance_pitch=0.20,
-        K_balance_roll=0.10,
-        wheelbase=1.53,
-        track=(1.28 + 1.24) / 2.0,
-        cop_z=0.0,
     )
 
 
@@ -424,7 +610,6 @@ def build_speed_profile(
 def build_aero_lateral_speed_profile(
     track: SegmentSpeedPath,
     tire_limit_map: AeroTireLimitMap,
-    vehicle_mass: float = DEFAULT_VEHICLE_MASS,
     max_straight_speed: float = DEFAULT_MAX_STRAIGHT_SPEED,
     curvature_floor: float = 1e-5,
     safety_factor: float = 0.98,
@@ -442,7 +627,7 @@ def build_aero_lateral_speed_profile(
             mid = 0.5 * (low + high)
             ay = mid * mid * kappa
             loads = tire_limit_map.wheel_loads(speed=mid, ax=0.0, ay=ay)
-            fy_need_total = vehicle_mass * ay
+            fy_need_total = tire_limit_map.car.m * ay
             fy_cap_total = float(np.sum(tire_limit_map.max_fy_for_loads(loads)))
             if fy_need_total <= fy_cap_total * safety_factor:
                 low = mid
@@ -458,7 +643,6 @@ def build_friction_limited_speed_plan(
     track: SegmentSpeedPath,
     tire_limit_map: AeroTireLimitMap,
     power_brake_limit: PowerBrakeSystemLimit,
-    vehicle_mass: float = DEFAULT_VEHICLE_MASS,
     max_straight_speed: float = DEFAULT_MAX_STRAIGHT_SPEED,
     curvature_floor: float = 1e-5,
     safety_factor: float = 0.98,
@@ -472,17 +656,19 @@ def build_friction_limited_speed_plan(
     and a backward pass pulls braking zones back from lower-speed corners.
     """
 
+    log_step("building aero lateral speed limit")
     lateral_speed_limit = build_aero_lateral_speed_profile(
         track=track,
         tire_limit_map=tire_limit_map,
-        vehicle_mass=vehicle_mass,
         max_straight_speed=max_straight_speed,
         curvature_floor=curvature_floor,
         safety_factor=safety_factor,
     )
     speed = lateral_speed_limit.copy()
 
-    for _ in range(max(int(passes), 1)):
+    total_passes = max(int(passes), 1)
+    for pass_index in range(total_passes):
+        log_step(f"speed plan pass {pass_index + 1}/{total_passes}: forward acceleration limit")
         for index in range(len(speed) - 1):
             ds = max(float(track.s[index + 1] - track.s[index]), 1e-6)
             accel = drive_accel_at_speed(
@@ -490,11 +676,11 @@ def build_friction_limited_speed_plan(
                 track.curvature[index],
                 tire_limit_map,
                 power_brake_limit,
-                vehicle_mass,
             )
             reachable = np.sqrt(max(speed[index] ** 2 + 2.0 * accel * ds, 0.0))
             speed[index + 1] = min(speed[index + 1], reachable)
 
+        log_step(f"speed plan pass {pass_index + 1}/{total_passes}: backward braking limit")
         for index in range(len(speed) - 2, -1, -1):
             ds = max(float(track.s[index + 1] - track.s[index]), 1e-6)
             speed[index] = min(
@@ -506,16 +692,15 @@ def build_friction_limited_speed_plan(
                     upper_speed=speed[index],
                     tire_limit_map=tire_limit_map,
                     power_brake_limit=power_brake_limit,
-                    vehicle_mass=vehicle_mass,
                 ),
             )
 
+    log_step("calculating speed plan acceleration and phase")
     acceleration = speed_to_acceleration(track.s, speed)
     phase = np.full(len(speed), "hold", dtype=object)
     phase[acceleration > 0.05] = "accelerate"
     phase[acceleration < -0.05] = "brake"
-    fz_per_tire = np.array([tire_limit_map.fz_at_speed(v) for v in speed], dtype=float)
-    downforce = np.array([tire_limit_map.downforce_at_speed(v) for v in speed], dtype=float)
+    log_step("calculating power and brake system limit traces")
     drive_system_accel_limit = np.array(
         [power_brake_limit.drive_accel_limit(v) for v in speed],
         dtype=float,
@@ -524,17 +709,40 @@ def build_friction_limited_speed_plan(
         [power_brake_limit.brake_decel_limit(v) for v in speed],
         dtype=float,
     )
-    wheel_loads = np.array(
+    log_step("calculating wheel load and aero attitude history")
+    wheel_states = [
+        tire_limit_map.wheel_load_state(
+            speed=float(v),
+            ax=float(ax),
+            ay=float(v * v * kappa),
+        )
+        for v, ax, kappa in zip(speed, acceleration, track.curvature)
+    ]
+    wheel_loads = np.array([state.loads for state in wheel_states], dtype=float)
+    theta = np.array([state.theta for state in wheel_states], dtype=float)
+    heave = np.array([state.heave for state in wheel_states], dtype=float)
+    downforce = np.array(
+        [state.aero_result["F_down"] for state in wheel_states],
+        dtype=float,
+    )
+    drag = np.array(
+        [state.aero_result["F_drag"] for state in wheel_states],
+        dtype=float,
+    )
+    cop = np.array(
         [
-            tire_limit_map.wheel_loads(
-                speed=float(v),
-                ax=float(ax),
-                ay=float(v * v * kappa),
-            )
-            for v, ax, kappa in zip(speed, acceleration, track.curvature)
+            [
+                state.aero_result["COP_x"],
+                state.aero_result["COP_y"],
+                tire_limit_map.aero.cop_z,
+            ]
+            for state in wheel_states
         ],
         dtype=float,
     )
+    cl = np.array([state.aero_result["CL"] for state in wheel_states], dtype=float)
+    cd = np.array([state.aero_result["CD"] for state in wheel_states], dtype=float)
+    fz_per_tire = np.mean(wheel_loads, axis=1)
 
     return SpeedPlan(
         lateral_speed_limit=lateral_speed_limit,
@@ -543,7 +751,13 @@ def build_friction_limited_speed_plan(
         phase=phase,
         fz_per_tire=fz_per_tire,
         wheel_loads=wheel_loads,
+        theta=theta,
+        heave=heave,
         downforce=downforce,
+        drag=drag,
+        cop=cop,
+        cl=cl,
+        cd=cd,
         drive_system_accel_limit=drive_system_accel_limit,
         brake_system_decel_limit=brake_system_decel_limit,
     )
@@ -554,7 +768,6 @@ def drive_accel_at_speed(
     curvature: float,
     tire_limit_map: AeroTireLimitMap,
     power_brake_limit: PowerBrakeSystemLimit,
-    vehicle_mass: float,
 ) -> float:
     key = (
         id(tire_limit_map),
@@ -567,17 +780,40 @@ def drive_accel_at_speed(
         return ACCEL_CACHE[key]
 
     ay = speed * speed * curvature
+    vehicle_mass = tire_limit_map.car.m
     low = 0.0
     high = 35.0
 
     for _ in range(10):
         candidate_ax = 0.5 * (low + high)
-        loads = tire_limit_map.wheel_loads(speed=speed, ax=candidate_ax, ay=ay)
+        load_state = tire_limit_map.wheel_load_state(speed=speed, ax=candidate_ax, ay=ay)
+        loads = load_state.loads
         fy_wheels = distribute_lateral_force(vehicle_mass * ay, loads)
         _, drive_fx = tire_limit_map.fx_limits_for_loads_and_fy(loads, fy_wheels)
-        tire_capacity_ax = max(float(np.sum(drive_fx)) / vehicle_mass, 0.0)
-        system_capacity_ax = power_brake_limit.drive_accel_limit(speed)
-        capacity_ax = min(tire_capacity_ax, system_capacity_ax)
+        loaded_radius = np.maximum(
+            tire_limit_map.car.R_tire - loads / tire_limit_map.car.K_tire,
+            1e-9,
+        )
+        aero_drag = float(load_state.aero_result["F_drag"])
+        rolling_resistance = float(
+            np.sum(
+                estimate_rolling_resistance_force(
+                    tire_limit_map.tire_map,
+                    loads,
+                    loaded_radius,
+                )
+            )
+        )
+        drive_force = power_brake_limit.scale_limited_drive_force(
+            speed,
+            drive_fx,
+            loaded_radius=loaded_radius,
+        )
+        capacity_ax = max(
+            (float(np.sum(drive_force)) - aero_drag - rolling_resistance)
+            / vehicle_mass,
+            0.0,
+        )
 
         if candidate_ax <= capacity_ax:
             low = candidate_ax
@@ -593,7 +829,6 @@ def brake_decel_at_speed(
     curvature: float,
     tire_limit_map: AeroTireLimitMap,
     power_brake_limit: PowerBrakeSystemLimit,
-    vehicle_mass: float,
 ) -> float:
     key = (
         id(tire_limit_map),
@@ -606,17 +841,43 @@ def brake_decel_at_speed(
         return ACCEL_CACHE[key]
 
     ay = speed * speed * curvature
+    vehicle_mass = tire_limit_map.car.m
     low = 0.0
     high = 35.0
 
     for _ in range(10):
         candidate_decel = 0.5 * (low + high)
-        loads = tire_limit_map.wheel_loads(speed=speed, ax=-candidate_decel, ay=ay)
+        load_state = tire_limit_map.wheel_load_state(
+            speed=speed,
+            ax=-candidate_decel,
+            ay=ay,
+        )
+        loads = load_state.loads
         fy_wheels = distribute_lateral_force(vehicle_mass * ay, loads)
         brake_fx, _ = tire_limit_map.fx_limits_for_loads_and_fy(loads, fy_wheels)
-        tire_capacity_decel = max(float(-np.sum(brake_fx)) / vehicle_mass, 0.0)
-        system_capacity_decel = power_brake_limit.brake_decel_limit(speed)
-        capacity_decel = min(tire_capacity_decel, system_capacity_decel)
+        loaded_radius = np.maximum(
+            tire_limit_map.car.R_tire - loads / tire_limit_map.car.K_tire,
+            1e-9,
+        )
+        aero_drag = float(load_state.aero_result["F_drag"])
+        rolling_resistance = float(
+            np.sum(
+                estimate_rolling_resistance_force(
+                    tire_limit_map.tire_map,
+                    loads,
+                    loaded_radius,
+                )
+            )
+        )
+        brake_force = power_brake_limit.scale_limited_brake_force(
+            brake_fx,
+            loaded_radius=loaded_radius,
+        )
+        capacity_decel = max(
+            (float(-np.sum(brake_force)) + aero_drag + rolling_resistance)
+            / vehicle_mass,
+            0.0,
+        )
 
         if candidate_decel <= capacity_decel:
             low = candidate_decel
@@ -634,6 +895,123 @@ def distribute_lateral_force(total_fy: float, loads: np.ndarray) -> np.ndarray:
     return total_fy * loads / load_sum
 
 
+def steering_angle_from_curvature(car: Car, curvature: float) -> float:
+    if not np.isfinite(curvature):
+        return 0.0
+
+    denominator = 1.0 - car.lr * curvature
+    if abs(denominator) < 1e-9:
+        denominator = np.copysign(1e-9, denominator)
+
+    return float(np.arctan((car.l * curvature) / denominator))
+
+
+def rolling_resistance_force_from_rrt(
+    rrt: np.ndarray,
+    loaded_radius: np.ndarray,
+) -> np.ndarray:
+    loaded_radius = np.maximum(np.asarray(loaded_radius, dtype=float), 1e-9)
+    return np.abs(np.asarray(rrt, dtype=float)) / loaded_radius
+
+
+def estimate_rolling_resistance_force(
+    tire_map: TireForceMap,
+    loads: np.ndarray,
+    loaded_radius: np.ndarray,
+) -> np.ndarray:
+    result = tire_map.evaluate(
+        fz=np.asarray(loads, dtype=float),
+        alpha_deg=np.zeros(4, dtype=float),
+        kappa=np.zeros(4, dtype=float),
+        outputs=("RRT",),
+    )
+    return rolling_resistance_force_from_rrt(result["RRT"], loaded_radius)
+
+
+def solve_tire_slip_from_force_map(
+    tire_map: TireForceMap,
+    fz: np.ndarray,
+    fx: np.ndarray,
+    fy: np.ndarray,
+) -> TireSlipSolution:
+    sa_vehicle = np.zeros(4, dtype=float)
+    sl = np.zeros(4, dtype=float)
+    mx = np.zeros(4, dtype=float)
+    mz = np.zeros(4, dtype=float)
+    rrt = np.zeros(4, dtype=float)
+    fx_error = np.zeros(4, dtype=float)
+    fy_error = np.zeros(4, dtype=float)
+    fy_to_map_sign = np.array([1.0, -1.0, 1.0, -1.0])
+    sa_from_map_sign = np.array([-1.0, 1.0, -1.0, 1.0])
+    mx_from_map_sign = -fy_to_map_sign
+    mz_from_map_sign = fy_to_map_sign
+
+    for index in range(4):
+        solution = solve_single_tire_slip_from_force_map(
+            tire_map=tire_map,
+            fz=float(fz[index]),
+            target_fx=float(fx[index]),
+            target_fy=float(fy[index] * fy_to_map_sign[index]),
+        )
+        sa_vehicle[index] = solution["SA_deg"] * sa_from_map_sign[index]
+        sl[index] = solution["SL"]
+        mx[index] = solution["MX"] * mx_from_map_sign[index]
+        mz[index] = solution["MZ"] * mz_from_map_sign[index]
+        rrt[index] = solution["RRT"]
+        fx_error[index] = solution["FX"] - float(fx[index])
+        fy_error[index] = solution["FY"] * fy_to_map_sign[index] - float(fy[index])
+
+    return TireSlipSolution(
+        sa_deg=sa_vehicle,
+        sl=sl,
+        mx=mx,
+        mz=mz,
+        rrt=rrt,
+        fx_error=fx_error,
+        fy_error=fy_error,
+    )
+
+
+def solve_single_tire_slip_from_force_map(
+    tire_map: TireForceMap,
+    fz: float,
+    target_fx: float,
+    target_fy: float,
+) -> dict[str, float]:
+    alpha_grid, kappa_grid = np.meshgrid(
+        tire_map.alpha_axis_deg,
+        tire_map.kappa_axis,
+        indexing="ij",
+    )
+    fz_grid = np.full_like(alpha_grid, fz, dtype=float)
+    result = tire_map.evaluate(
+        fz=fz_grid,
+        alpha_deg=alpha_grid,
+        kappa=kappa_grid,
+        outputs=("FX", "FY", "MX", "MZ", "RRT"),
+    )
+    fx_grid = np.asarray(result["FX"], dtype=float)
+    fy_grid = np.asarray(result["FY"], dtype=float)
+    fx_scale = max(float(np.ptp(fx_grid)), 1.0)
+    fy_scale = max(float(np.ptp(fy_grid)), 1.0)
+    error = ((fx_grid - target_fx) / fx_scale) ** 2 + (
+        (fy_grid - target_fy) / fy_scale
+    ) ** 2
+    flat_index = int(np.argmin(error))
+    index = np.unravel_index(flat_index, error.shape)
+
+    return {
+        "FZ": fz,
+        "FX": float(fx_grid[index]),
+        "FY": float(fy_grid[index]),
+        "MX": float(result["MX"][index]),
+        "MZ": float(result["MZ"][index]),
+        "RRT": float(result["RRT"][index]),
+        "SA_deg": float(alpha_grid[index]),
+        "SL": float(kappa_grid[index]),
+    }
+
+
 def max_entry_speed_for_braking(
     exit_speed: float,
     ds: float,
@@ -641,7 +1019,6 @@ def max_entry_speed_for_braking(
     upper_speed: float,
     tire_limit_map: AeroTireLimitMap,
     power_brake_limit: PowerBrakeSystemLimit,
-    vehicle_mass: float,
 ) -> float:
     """Solve the highest current speed that can brake to exit_speed over ds."""
 
@@ -655,7 +1032,6 @@ def max_entry_speed_for_braking(
             curvature,
             tire_limit_map,
             power_brake_limit,
-            vehicle_mass,
         )
         reachable_exit_square = mid * mid - 2.0 * decel * ds
 
@@ -696,15 +1072,47 @@ def export_lap_log(
     track: SegmentSpeedPath,
     speed_plan: SpeedPlan,
     tire_limit_map: AeroTireLimitMap,
+    power_brake_limit: PowerBrakeSystemLimit,
     car: Car,
     output_path: str | Path = DEFAULT_LAP_DATA_OUTPUT,
 ) -> Path:
     """Store one planned lap as Vehicle_state samples through SimulationLogger."""
 
+    log_step("exporting lap log: loading tire map")
     logger = SimulationLogger()
+    tire_map = TireForceMap.load(DEFAULT_TIRE_MAP)
+    log_step("exporting lap log: preparing kinematic histories")
     heading = np.arctan2(np.gradient(track.y), np.gradient(track.x))
     time = lap_time_vector(track.s, speed_plan.speed)
+    theta_history = speed_plan.theta.copy()
+    theta_history[:, 3] = heading
+    s_history = np.column_stack(
+        (
+            track.s,
+            np.zeros_like(track.s),
+            speed_plan.heave,
+        )
+    )
+    v_history = np.column_stack(
+        (
+            speed_plan.speed,
+            np.zeros_like(speed_plan.speed),
+            gradient_by_time(speed_plan.heave, time),
+        )
+    )
+    a_history = np.column_stack(
+        (
+            speed_plan.acceleration,
+            speed_plan.speed * speed_plan.speed * track.curvature,
+            gradient_by_time(v_history[:, 2], time),
+        )
+    )
+    omega_history = gradient_by_time(theta_history, time)
+    alpha_history = gradient_by_time(omega_history, time)
 
+    total_samples = len(track.x)
+    progress_step = max(total_samples // 10, 1)
+    log_step(f"exporting lap log: solving tire slips for {total_samples} samples")
     for index, (x, y, s_pos, speed, ax, kappa) in enumerate(
         zip(
             track.x,
@@ -715,6 +1123,13 @@ def export_lap_log(
             track.curvature,
         )
     ):
+        if index == 0 or (index + 1) % progress_step == 0 or index + 1 == total_samples:
+            progress = 100.0 * (index + 1) / max(total_samples, 1)
+            log_step(
+                f"exporting lap log: sample {index + 1}/{total_samples} "
+                f"({progress:.0f}%)"
+            )
+
         state = Vehicle_state(car)
         state.t = float(time[index])
 
@@ -727,65 +1142,144 @@ def export_lap_log(
         ay = float(speed * speed * kappa)
         loads = np.asarray(speed_plan.wheel_loads[index], dtype=float)
         total_fy = car.m * ay
-        total_fx = car.m * float(ax)
+        motion_fx = car.m * float(ax)
+        aero_drag = float(speed_plan.drag[index])
+        theta = theta_history[index].copy()
+        aero_cop = speed_plan.cop[index]
+        steer_angle = steering_angle_from_curvature(car, float(kappa))
 
-        state.s = np.array([float(s_pos), 0.0, 0.0])
+        state.s = s_history[index].copy()
         state.s_world = np.array([float(x), float(y), 0.0])
-        state.theta[3] = yaw
-        state.v = np.array([float(speed), 0.0, 0.0])
-        state.a = np.array([float(ax), ay, 0.0])
-        state.omega[3] = float(speed * kappa)
+        state.theta = theta
+        state.v = v_history[index].copy()
+        state.a = a_history[index].copy()
+        state.omega = omega_history[index].copy()
+        state.alpha = alpha_history[index].copy()
         state.v_world = np.array(
             [float(speed * np.cos(yaw)), float(speed * np.sin(yaw)), 0.0]
         )
         state.update_world_state()
+        state.zs = Vehicle_state.body_to_corner(state.s, state.theta, car)
+        state.vzs = Vehicle_state.body_to_corner(state.v, state.omega, car)
+        state.azs = Vehicle_state.body_to_corner(state.a, state.alpha, car)
 
         state.N = loads.copy()
         state.Fz = loads.copy()
+        state.Fs = loads.copy()
+        state.Ft = loads.copy()
         state.loaded_radius = np.maximum(
             car.R_tire - loads / car.K_tire,
             0.0,
         )
-        state.omega_w = np.full(4, float(speed / car.R_tire), dtype=float)
+        state.omega_w = speed / np.maximum(state.loaded_radius, 1e-9)
+        state.steer = np.array([steer_angle, steer_angle, 0.0, 0.0], dtype=float)
 
         state.Fy = distribute_lateral_force(total_fy, loads)
-        state.Fx = distribute_lateral_force(total_fx, loads)
-        state.F_cg = np.array([total_fx, total_fy, -float(np.sum(loads))])
+        rolling_resistance = estimate_rolling_resistance_force(
+            tire_map=tire_map,
+            loads=loads,
+            loaded_radius=state.loaded_radius,
+        )
+        total_tire_fx = motion_fx + aero_drag + float(np.sum(rolling_resistance))
 
-        aero_result = tire_limit_map.aero.calculate_from_modal(
-            float(speed),
-            tire_limit_map.aero_config.qh,
-            tire_limit_map.aero_config.qp,
-            tire_limit_map.aero_config.qr,
-        )
-        state.F_aero = np.array(
-            [0.0, 0.0, -float(aero_result["F_down"])],
-            dtype=float,
-        )
-        state.COP = np.array(
-            [
-                float(aero_result["COP_x"]),
-                float(aero_result["COP_y"]),
-                tire_limit_map.aero.cop_z,
-            ],
-            dtype=float,
-        )
-        state.aero_force = state.F_aero.copy()
-        state.aero_F_down = float(aero_result["F_down"])
-        state.aero_F_drag = float(aero_result["F_drag"])
-        state.aero_CL = float(aero_result["CL"])
-        state.aero_CD = float(aero_result["CD"])
-        state.aero_COP = state.COP.copy()
+        for _ in range(2):
+            if total_tire_fx > 0.05:
+                state.Fx = power_brake_limit.distribute_drive_force(
+                    speed=float(speed),
+                    total_fx=total_tire_fx,
+                    loaded_radius=state.loaded_radius,
+                )
+            elif total_tire_fx < -0.05:
+                state.Fx = power_brake_limit.distribute_brake_force(
+                    total_fx=total_tire_fx,
+                    loaded_radius=state.loaded_radius,
+                )
+            else:
+                state.Fx = distribute_lateral_force(total_tire_fx, loads)
 
-        if ax > 0.05:
-            state.gas_cmd = 1.0
-            state.brake_cmd = 0.0
-        elif ax < -0.05:
-            state.gas_cmd = 0.0
-            state.brake_cmd = 1.0
+            slip_solution = solve_tire_slip_from_force_map(
+                tire_map=tire_map,
+                fz=state.Fz,
+                fx=state.Fx,
+                fy=state.Fy,
+            )
+            rolling_resistance = rolling_resistance_force_from_rrt(
+                slip_solution.rrt,
+                state.loaded_radius,
+            )
+            total_tire_fx = motion_fx + aero_drag + float(np.sum(rolling_resistance))
+
+        if total_tire_fx > 0.05:
+            state.Fx = power_brake_limit.distribute_drive_force(
+                speed=float(speed),
+                total_fx=total_tire_fx,
+                loaded_radius=state.loaded_radius,
+            )
+        elif total_tire_fx < -0.05:
+            state.Fx = power_brake_limit.distribute_brake_force(
+                total_fx=total_tire_fx,
+                loaded_radius=state.loaded_radius,
+            )
         else:
-            state.gas_cmd = 0.0
-            state.brake_cmd = 0.0
+            state.Fx = distribute_lateral_force(total_tire_fx, loads)
+
+        slip_solution = solve_tire_slip_from_force_map(
+            tire_map=tire_map,
+            fz=state.Fz,
+            fx=state.Fx,
+            fy=state.Fy,
+        )
+        rolling_resistance = rolling_resistance_force_from_rrt(
+            slip_solution.rrt,
+            state.loaded_radius,
+        )
+        total_tire_fx = motion_fx + aero_drag + float(np.sum(rolling_resistance))
+        state.F_cg = np.array([motion_fx, total_fy, -float(np.sum(loads))])
+        gas_cmd = 0.0
+        brake_cmd = 0.0
+        if total_tire_fx > 0.05:
+            gas_cmd = power_brake_limit.drive_command_from_force(
+                speed=float(speed),
+                total_fx=total_tire_fx,
+                loaded_radius=state.loaded_radius,
+            )
+        elif total_tire_fx < -0.05:
+            brake_cmd = power_brake_limit.brake_command_from_force(
+                total_fx=total_tire_fx,
+                loaded_radius=state.loaded_radius,
+            )
+
+        state.SA = slip_solution.sa_deg
+        state.SL = slip_solution.sl
+        state.Mx_w = slip_solution.mx
+        state.Mz_w = slip_solution.mz
+        state.RRT_w = slip_solution.rrt
+        state.tire_map_Fx_error = slip_solution.fx_error
+        state.tire_map_Fy_error = slip_solution.fy_error
+
+        state.F_aero = np.array(
+            [-float(speed_plan.drag[index]), 0.0, -float(speed_plan.downforce[index])],
+            dtype=float,
+        )
+        state.COP = aero_cop.copy()
+        state.aero_force = state.F_aero.copy()
+        state.aero_F_down = float(speed_plan.downforce[index])
+        state.aero_F_drag = float(speed_plan.drag[index])
+        state.aero_CL = float(speed_plan.cl[index])
+        state.aero_CD = float(speed_plan.cd[index])
+        state.aero_COP = state.COP.copy()
+        state.aero_qh = float(speed_plan.heave[index])
+        state.aero_qp = float(theta[2])
+        state.aero_qr = float((theta[0] + theta[1]) / 2.0)
+
+        state.gas_cmd = gas_cmd
+        state.brake_cmd = brake_cmd
+        state.phase = str(speed_plan.phase[index])
+
+        wheel_torque = state.Fx * state.loaded_radius
+        state.T_drive = np.maximum(wheel_torque, 0.0)
+        state.T_brake = np.minimum(wheel_torque, 0.0)
+        state.T_motor = Motor_output_torque(state.T_drive, car)
 
         logger.add_state(state)
 
@@ -797,11 +1291,16 @@ def export_lap_log(
         samples=len(track.x),
         lap_time_s=float(time[-1]),
         vehicle_mass_kg=float(car.m),
-        note="Unavailable model fields are left at Vehicle_state defaults, mostly 0.0.",
+        note=(
+            "Generated from simplified steady-state speed planning. "
+            "Front/rear roll are set equal for aero attitude; dynamic suspension "
+            "fields are kinematic estimates, not full transient suspension output."
+        ),
     )
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    log_step(f"exporting lap log: saving {output_path}")
     logger.save(output_path)
     return output_path
 
@@ -815,6 +1314,16 @@ def lap_time_vector(s: np.ndarray, speed: np.ndarray) -> np.ndarray:
     dt[valid] = ds[valid] / segment_speed[valid]
     time[1:] = np.cumsum(dt)
     return time
+
+
+def gradient_by_time(value: np.ndarray, time: np.ndarray) -> np.ndarray:
+    value = np.asarray(value, dtype=float)
+    time = np.asarray(time, dtype=float)
+
+    if len(time) < 2 or np.ptp(time) <= 1e-12:
+        return np.zeros_like(value, dtype=float)
+
+    return np.gradient(value, time, axis=0, edge_order=1)
 
 
 def solve_fx_limits_on_slice(
@@ -1030,27 +1539,36 @@ def plot_speed_map(
     fig.tight_layout()
 
     output_path = Path(output_path)
+    log_step(f"saving speed map figure to {output_path}")
     fig.savefig(output_path, dpi=180)
+    log_step("showing speed map figure; close the figure window to continue lap-data export")
     plt.show()
+    log_step("speed map figure closed")
     return output_path
 
 
 def main() -> None:
+    log_step("loading track segments")
     segment_track = SegmentTrack(
         csv_file=DEFAULT_SEGMENT_CSV,
         track_width=3.0,
         ds=0.5,
     )
+    log_step("building track speed path")
     track = build_segment_speed_path(segment_track)
+    log_step("initializing car and power/brake limits")
     car = Car()
     power_brake_limit = PowerBrakeSystemLimit(car)
-    static_tire_limit = load_tire_lateral_limit()
+    log_step("loading static tire lateral limit")
+    static_tire_limit = load_tire_lateral_limit(car=car)
+    log_step("building aero tire limit map")
     tire_limit_map = AeroTireLimitMap.build(
         map_path=DEFAULT_TIRE_MAP,
-        vehicle_mass=DEFAULT_VEHICLE_MASS,
+        car=car,
         max_speed=DEFAULT_MAX_STRAIGHT_SPEED,
         aero_config=AeroConfig(enabled=True),
     )
+    log_step("building friction-limited speed plan")
     speed_plan = build_friction_limited_speed_plan(
         track=track,
         tire_limit_map=tire_limit_map,
@@ -1058,14 +1576,19 @@ def main() -> None:
         max_straight_speed=DEFAULT_MAX_STRAIGHT_SPEED,
         safety_factor=0.98,
     )
+    log_step("calculating planned lap time")
     planned_lap_time = lap_time_from_speed(track.s, speed_plan.speed)
+    log_step("plotting speed map")
     planned_output_path = plot_speed_map(track, speed_plan, tire_limit_map)
+    log_step("exporting Vehicle_state lap data")
     lap_data_output_path = export_lap_log(
         track=track,
         speed_plan=speed_plan,
         tire_limit_map=tire_limit_map,
+        power_brake_limit=power_brake_limit,
         car=car,
     )
+    log_step("all calculations complete")
 
     print("Tire-limited speed map complete")
     print(f"Track points: {len(track.x)}")

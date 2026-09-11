@@ -50,6 +50,8 @@ class Vehicle_state:
 
         self.SL = np.zeros(4)
         self.SA = np.zeros(4)
+        self.tire_map_Fx_error = np.zeros(4)
+        self.tire_map_Fy_error = np.zeros(4)
 
         # 正向力量
         self.N = np.zeros(4)
@@ -72,6 +74,15 @@ class Vehicle_state:
         # ==================================================
         self.COP = np.zeros(3)     # Center of pressure in vehicle frame [x, y, z]
         self.F_aero = np.zeros(3)  # Aero force in vehicle frame [Fx, Fy, Fz]
+        self.aero_force = np.zeros(3)
+        self.aero_F_down = 0.0
+        self.aero_F_drag = 0.0
+        self.aero_CL = 0.0
+        self.aero_CD = 0.0
+        self.aero_COP = np.zeros(3)
+        self.aero_qh = 0.0
+        self.aero_qp = 0.0
+        self.aero_qr = 0.0
 
         # other
         # ===================================================
@@ -90,6 +101,7 @@ class Vehicle_state:
         # 踏板命令
         self.gas_cmd = 0.0
         self.brake_cmd = 0.0
+        self.phase = ""
 
 
         # 扭矩
