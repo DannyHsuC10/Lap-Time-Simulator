@@ -5,6 +5,11 @@ close all;
 % 路徑
 addpath("vechiles")
 
+result_dir = fullfile(fileparts(mfilename('fullpath')), 'result');
+if ~exist(result_dir, 'dir')
+    mkdir(result_dir);
+end
+
 % 車輛
 
 car = Vehicle_data();
@@ -33,7 +38,7 @@ state.power = [0,0,0,0];
 %% =====================================================
 % Track geometry
 %% =====================================================
-figure
+fig_track_geometry = figure;
 hold on
 grid on
 axis equal
@@ -84,10 +89,10 @@ for section = 1:length(feature.idx)
 
     if section < length(feature.idx)% 預測
         r_section = 1/abs(feature.kappa(section+1));
-        vf = (14./abs(feature.kappa(section+1))).^0.5;
+        vf = (17./abs(feature.kappa(section+1))).^0.5;
     else
         r_section = 1/abs(feature.kappa(1));
-        vf = (14./abs(feature.kappa(1))).^0.5;
+        vf = (17./abs(feature.kappa(1))).^0.5;
     end
     
     fprintf("L: %fm, vf: %fkm/h, r: %fm\n",L,vf*3.6,r_section)
@@ -109,28 +114,28 @@ end
 %% =====================================================
 % plot
 %% =====================================================
-figure;
+fig_s_vs_v = figure;
 plot(sim.s_list,sim.v_list*3.6,'LineWidth',2);
 xlabel('Distance (m)');
 ylabel('Speed (km/h)');
 title('s vs v');
 grid on;
 
-figure;
+fig_s_vs_t = figure;
 plot(sim.t_list,sim.s_list*3.6,'LineWidth',2);
 xlabel('Time (s)');
 ylabel('Distance (m)');
 title('s vs t');
 grid on;
 
-figure;
+fig_v_vs_t = figure;
 plot(sim.t_list,sim.v_list*3.6,'LineWidth',2);
 xlabel('Time (s)');
 ylabel('Speed (km/h)');
 title('v vs t');
 grid on;
 
-figure;
+fig_a_vs_t = figure;
 plot(sim.t_list,sim.a_list/9.81,'LineWidth',2);
 xlabel('Time (s)');
 ylabel('Acceleration (g)');
@@ -164,7 +169,7 @@ t_map = interp1( ...
     'linear',...
     'extrap');
 
-figure;
+fig_vehicle_speed_map = figure;
 hold on;
 grid on;
 axis equal;
@@ -224,20 +229,39 @@ lap.summary.average_speed  = track.s(end)/sim.t_list(end);
 
 lap.summary.date = datetime("now");
 
-fprintf("\n");
-fprintf("=============================================\n");
-fprintf(" Lap Simulation Finished\n");
-fprintf("=============================================\n");
-fprintf("Lap Time      : %.3f s\n",lap.summary.lap_time);
-fprintf("Track Length  : %.2f m\n",lap.summary.track_length);
-fprintf("Average Speed : %.2f km/h\n",lap.summary.average_speed*3.6);
-fprintf("Maximum Speed : %.2f km/h\n",lap.summary.max_speed*3.6);
-fprintf("=============================================\n");
+summary_text = sprintf([ ...
+    '\n', ...
+    '=============================================\n', ...
+    ' Lap Simulation Finished\n', ...
+    '=============================================\n', ...
+    'Lap Time      : %.3f s\n', ...
+    'Track Length  : %.2f m\n', ...
+    'Average Speed : %.2f km/h\n', ...
+    'Maximum Speed : %.2f km/h\n', ...
+    '=============================================\n'], ...
+    lap.summary.lap_time, ...
+    lap.summary.track_length, ...
+    lap.summary.average_speed*3.6, ...
+    lap.summary.max_speed*3.6);
+
+fprintf("%s", summary_text);
 
 %% =====================================================
 % Save
 %% =====================================================
 
-save("lap_result.mat","lap");
+save(fullfile(result_dir, 'lap_result.mat'), 'lap');
 
-fprintf("\nResult saved to lap_result.mat\n");
+summary_file = fullfile(result_dir, 'lap_summary.txt');
+fid = fopen(summary_file, 'w');
+fprintf(fid, "%s", summary_text);
+fclose(fid);
+
+saveas(fig_track_geometry, fullfile(result_dir, 'track_geometry.png'));
+saveas(fig_s_vs_v, fullfile(result_dir, 's_vs_v.png'));
+saveas(fig_s_vs_t, fullfile(result_dir, 's_vs_t.png'));
+saveas(fig_v_vs_t, fullfile(result_dir, 'v_vs_t.png'));
+saveas(fig_a_vs_t, fullfile(result_dir, 'a_vs_t.png'));
+saveas(fig_vehicle_speed_map, fullfile(result_dir, 'vehicle_speed_map.png'));
+
+fprintf("\nResult saved to %s\n", result_dir);

@@ -5,10 +5,12 @@ classdef tir_model
     
     methods
         function obj = tir_model(car)
+            addpath("MF62_tir_model/Pacejka_matlab_model")
             try
                 load TireDB.mat TireDB
+                disp("load TireDB.mat TireDB")
             catch
-                tir = load_tir("D2704_mf612.tir");
+                tir = load_tir("FSAE_43075R20_W8.tir");
                 TireDB = build_tire_database(car.camber,car.P_tir,tir);
             end
             obj.tire_data = TireDB;
@@ -39,6 +41,10 @@ classdef tir_model
         %%
 % ===== 方法 2：摩擦橢圓法（修正複數與越界問題） =====
         function Fx = lim_output_ellipse(obj,Fz,Fy,direction)
+            output_size = size(Fz);
+            Fz = Fz(:);
+            Fy = Fy(:);
+
             % 1. 安全防護：強制轉換輸入為實數，避免上一層模型傳入複數
             Fz = real(Fz);
             Fy = real(Fy);
@@ -50,12 +56,12 @@ classdef tir_model
             
             % 3. 獲取純縱向極限 (Fy = 0)
             if direction == "A"
-                Fx_pure_max = interp2(obj.tire_data.Fy_grid, obj.tire_data.Fz_grid, obj.tire_data.Fx_max, 0, Fz, 'linear');
+                Fx_pure_max = interp2(obj.tire_data.Fy_grid, obj.tire_data.Fz_grid, obj.tire_data.Fx_max, zeros(size(Fz)), Fz, 'linear');
             elseif direction == "B"
-                Fx_pure_max = interp2(obj.tire_data.Fy_grid, obj.tire_data.Fz_grid, obj.tire_data.Fx_min, 0, Fz, 'linear');
+                Fx_pure_max = interp2(obj.tire_data.Fy_grid, obj.tire_data.Fz_grid, obj.tire_data.Fx_min, zeros(size(Fz)), Fz, 'linear');
             else
                 disp("direction[A:acceleration,B:brake]");
-                Fx = 0;
+                Fx = zeros(output_size);
                 return;
             end
             
@@ -71,8 +77,9 @@ classdef tir_model
             Fy_pure_max = max(real(Fy_pure_max), 1e-3); 
 
             % 5. 實作摩擦橢圓公式
-            ellipse_ratio = sqrt(max(0, 1 - (Fy / Fy_pure_max).^2));
-            Fx = Fx_pure_max * ellipse_ratio;
+            ellipse_ratio = sqrt(max(0, 1 - (Fy ./ Fy_pure_max).^2));
+            Fx = Fx_pure_max .* ellipse_ratio;
+            Fx = reshape(Fx, output_size);
         end
 
     end

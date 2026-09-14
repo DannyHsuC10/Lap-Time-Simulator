@@ -20,7 +20,7 @@ state.power = [0,0,0,0];
 
 %% 2. 定義掃描範圍 (根據你的車輛性能調整)
 v_range  = linspace(5, 30, 20);    % 車速範圍 (m/s)，避免從 0 開始以防分母為 0
-ay_range = linspace(-14, 14, 30);  % 側向加速度範圍 (m/s^2)
+ay_range = linspace(-22, 22, 81);  % 側向加速度範圍 (m/s^2)，奇數點確保包含 ay = 0
 
 % 建立網格格點
 [V_mesh, Ay_mesh] = meshgrid(v_range, ay_range);
@@ -34,22 +34,25 @@ for i = 1:size(V_mesh, 1)
         v = V_mesh(i, j);
         ay = Ay_mesh(i, j);
         
-        % --- 尋找最大加速 ax (a > 0) ---
-        % 這裡假設 a 的範圍是 0 到 1 (油門踏板開度)
-        % 如果你的 a 代表總驅動力或踏板，請調整最佳化範圍
-        opt_fun_max = @(a) -eval_ax(a, v, ay, state, car, aero, motor, "A", tire, brake);
-        [a_opt_max, fval_max] = fminbnd(opt_fun_max, 0, 1); 
-        Ax_max_mesh(i, j) = -fval_max;
+        % --- 最大加速 ax ---
+        % vehicle_model 的第一個輸入是用於載荷轉移的 ax，不是油門開度。
+        % 因此這裡解 ax_in = ax_out 的自洽狀態，而不是用 fminbnd 掃假的油門。
+        Ax_max_mesh(i, j) = solve_consistent_ax( ...
+            v, ay, state, car, aero, motor, "A", tire, brake);
         
-        % --- 尋找最大煞車 ax (a < 0) ---
-        % 這裡假設 a 的範圍是 -1 到 0 (煞車踏板開度)
-        opt_fun_min = @(a) eval_ax(a, v, ay, state, car, aero, motor, "B", tire, brake);
-        [a_opt_min, fval_min] = fminbnd(opt_fun_min, -1, 0);
-        Ax_min_mesh(i, j) = fval_min;
+        % --- 最大煞車 ax ---
+        Ax_min_mesh(i, j) = solve_consistent_ax( ...
+            v, ay, state, car, aero, motor, "B", tire, brake);
         
     end
 end
 fprintf('掃描完成！準備畫圖...\n');
+
+% 左右對稱性檢查：前後不需要對稱，但 ay 正負應該接近鏡像。
+ax_acc_sym_error = max(abs(Ax_max_mesh-flipud(Ax_max_mesh)),[],'all','omitnan');
+ax_brk_sym_error = max(abs(Ax_min_mesh-flipud(Ax_min_mesh)),[],'all','omitnan');
+fprintf('Acceleration left/right max error: %.6f m/s^2\n', ax_acc_sym_error);
+fprintf('Braking left/right max error     : %.6f m/s^2\n', ax_brk_sym_error);
 
 %% 4. 繪製 3D GGV 曲面
 figure();
@@ -70,9 +73,35 @@ zlabel('Longitudinal Acceleration a_x (m/s^2)', 'FontSize', 12);
 title('Vehicle GGV Plot (3D Surface)', 'FontSize', 14);
 
 
-%% 5. 輔助函式：呼叫車輛模型並提取 ax
-function ax = eval_ax(a, v, ay, state, car, aero, motor, d, tire, brake)
-    % 呼叫你的車輛模型
-    [~, ax] = vehicle_model(a, v, ay, state, car, aero, motor, d, tire, brake);
-    
+%% 5. 輔助函式：解出自洽的 ax
+function ax = solve_consistent_ax(v, ay, state, car, aero, motor, d, tire, brake)
+
+    if d == "A"
+        ax_guess = 0;
+    else
+        ax_guess = -5;
+    end
+
+    relaxation = 0.5;
+    tolerance = 1e-5;
+    max_iter = 80;
+
+    for k = 1:max_iter
+        [~, ax_out] = vehicle_model( ...
+            ax_guess, v, ay, state, car, aero, motor, d, tire, brake);
+
+        if ~isfinite(ax_out)
+            ax = NaN;
+            return
+        end
+
+        if abs(ax_out-ax_guess) < tolerance
+            ax = ax_out;
+            return
+        end
+
+        ax_guess = (1-relaxation)*ax_guess + relaxation*ax_out;
+    end
+
+    ax = ax_guess;
 end

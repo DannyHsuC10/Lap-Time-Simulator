@@ -29,7 +29,7 @@ classdef Aerodynamics < handle
             Fz_air = v.^2*obj.Cl_aero;
             Fy_air = 0;
 
-            COP = [0,0.155,0.289];% 空力重心先設定 這個可以變動
+            COP = [0,0,0.289];% 空力重心先設定 這個可以變動
             
             F = [Fx_air,Fy_air,Fz_air];
         end

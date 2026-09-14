@@ -60,8 +60,8 @@ end
 
 function [Fx,Fy]= Power_distribution(Fyc,Fz,car,direction,tire)% 力量分配
     % 力矩進行力量分配
-    Fyf = Fyc*car.L_rear;
-    Fyr = Fyc*car.L_front;
+    Fyf = Fyc * car.L_rear / car.L;
+    Fyr = Fyc * car.L_front / car.L;
 
     % 正向力進行力量分配
     Fzfl = Fz(1);

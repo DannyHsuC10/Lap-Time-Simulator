@@ -6,7 +6,7 @@ clc; clear; close all;
 % 1. 載入模型與路徑
 addpath("power")
 addpath("braking")
-addpath("MF62_tir_model")
+addpath("FSAE_43075R20_W8")
 addpath("aero")
 
 car = Vehicle_data();
@@ -31,10 +31,9 @@ for r = 1:Rows
     for c = 1:Cols
         Fz_test = FZ(r, c);
         Fy_test = FY(r, c);
-        
-        % 呼叫您的輪胎限制函式並加上 abs() 確保安全
-        Fx_acc_surf(r, c) = tire.lim_output(Fz_test, abs(Fy_test), "A");
-        Fx_brk_surf(r, c) = tire.lim_output(Fz_test, abs(Fy_test), "B");
+
+        Fx_acc_surf(r, c) = tire.lim_output(Fz_test, Fy_test, "A");
+        Fx_brk_surf(r, c) = tire.lim_output(Fz_test, Fy_test, "B");
     end
 end
 

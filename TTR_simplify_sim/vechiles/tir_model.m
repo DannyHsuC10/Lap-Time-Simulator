@@ -9,17 +9,26 @@ classdef tir_model
             disp("tir model loading complete")
         end
         function Fx = lim_output(obj,Fz,Fy,direction)
-           
-            % 5. 實作摩擦橢圓公式
-            F_ratio = sqrt(max(0, 1 - (Fy / Fz*obj.mu).^2));
-            if direction =="A"
-            Fx = Fz*obj.mu * F_ratio;
-            elseif direction == "B"
-                Fx = -Fz*obj.mu * F_ratio;
-            else
-                Fx = 0; % Default case for invalid direction
+        
+            if any(Fz <= 0)
+                Fx = zeros(size(Fz));
+                return;
             end
+        
+            Fx_limit = sqrt(max(0,(obj.mu.*Fz).^2 - Fy.^2));
+        
+            switch upper(direction)
+        
+                case 'A'      % Acceleration
+                    Fx = Fx_limit;
+        
+                case 'B'      % Braking
+                    Fx = -Fx_limit;
+        
+                otherwise
+                    Fx = zeros(size(Fz));
+            end
+        
         end
-
     end
 end
