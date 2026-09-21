@@ -1578,6 +1578,7 @@ def plot_speed_map(
     track: SegmentSpeedPath,
     speed_plan: SpeedPlan,
     tire_limit_map: AeroTireLimitMap,
+    lap_time_s: float,
     output_path: str | Path = DEFAULT_PLANNED_OUTPUT,
 ) -> Path:
     """Draw the Fx/Fy-limited speed plan and save it."""
@@ -1611,10 +1612,7 @@ def plot_speed_map(
     ax.set_aspect("equal", adjustable="box")
     ax.set_xlabel("X [m]")
     ax.set_ylabel("Y [m]")
-    ax.set_title(
-        "Aero Fx/Fy Speed Map "
-        f"(wheel load={np.min(speed_plan.wheel_loads):.0f}-{np.max(speed_plan.wheel_loads):.0f} N)"
-    )
+    ax.set_title(f"Aero Fx/Fy Speed Map (lap time={lap_time_s:.3f} s)")
     ax.grid(True, linestyle=":", linewidth=0.6)
     ax.legend(loc="best")
 
@@ -1689,7 +1687,12 @@ def main() -> None:
     log_step("calculating planned lap time")
     planned_lap_time = lap_time_from_speed(track.s, speed_plan.speed)
     log_step("plotting speed map")
-    planned_output_path = plot_speed_map(track, speed_plan, tire_limit_map)
+    planned_output_path = plot_speed_map(
+        track,
+        speed_plan,
+        tire_limit_map,
+        lap_time_s=planned_lap_time,
+    )
     log_step("exporting Vehicle_state lap data")
     lap_data_output_path = export_lap_log(
         track=track,

@@ -16,7 +16,7 @@ state.power = [0,0,0,0];
 
 %% 2. 定義掃描範圍 (根據你的車輛性能調整)
 v_range  = linspace(5, 30, 20);    % 車速範圍 (m/s)，避免從 0 開始以防分母為 0
-ay_range = linspace(-25, 25, 30);  % 側向加速度範圍 (m/s^2)
+ay_range = linspace(-30, 30, 30);  % 側向加速度範圍 (m/s^2)
 
 % 建立網格格點
 [V_mesh, Ay_mesh] = meshgrid(v_range, ay_range);

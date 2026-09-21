@@ -4,6 +4,8 @@ close all;
 
 % 路徑
 addpath("vechiles")
+addpath("track\")
+addpath("result\")
 
 result_dir = fullfile(fileparts(mfilename('fullpath')), 'result');
 if ~exist(result_dir, 'dir')

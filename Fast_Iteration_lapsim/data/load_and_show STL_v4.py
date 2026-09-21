@@ -7,12 +7,13 @@ from Simulation_Logger import SimulationLogger
 
 
 scale = 1000.0
-camera_distance_scale = 0.1
-Attitude_gain = 1
+camera_distance_scale = 0.01# 設定車輛大小越小放越大
+Attitude_gain = 5
 force_arrow_scale = 1
 force_arrow_tip_length = 0.25
 force_arrow_tip_radius = 0.08
 force_arrow_shaft_radius = 0.025
+playback_speed = 0.03# 設定播放速度
 
 def require_key(result, key):
     if key not in result:
@@ -338,15 +339,18 @@ plotter.show(
     interactive_update=True
 )
 
-frame = 0
+sim_frame = 0.0
+last_logged_frame = None
 camera_offset = None
 
 while True:
 
-    if frame >= len(time_data):
-        frame = 0
+    if sim_frame >= len(time_data):
+        sim_frame = 0.0
 
-    if frame % 50 == 0:
+    frame = int(sim_frame)
+
+    if frame % 50 == 0 and frame != last_logged_frame:
         print(
             "frame:", frame,
             "world position:",
@@ -358,6 +362,7 @@ while True:
             f"{zu[frame, 2]:.4f}",
             f"{zu[frame, 3]:.4f}",
         )
+        last_logged_frame = frame
 
     # =================================================
     # Update chassis
@@ -473,4 +478,4 @@ while True:
 
         plotter.update()
 
-    frame += 1
+    sim_frame += playback_speed

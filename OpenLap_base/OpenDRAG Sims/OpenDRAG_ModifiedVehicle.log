@@ -6,31 +6,31 @@
                       /_/                                                 
 =======================================================================================
 Vehicle: ModifiedVehicle
-Date:    14/09/2026
-Time:    01:32:03
+Date:    15/09/2026
+Time:    22:32:19
 Powertrain: EV fixed-ratio motor table
 =======================================================================================
 Acceleration simulation started:
 Initial Speed: 0 km/h
 |_______Comment________|_Speed_|_Accel_|_EnRPM_|_Gear__|_Tabs__|_Xabs__|_Trel__|_Xrel_|
 |______________________|[km/h]_|__[G]__|_[rpm]_|__[#]__|__[s]__|__[m]__|__[s]__|_[m]__|
-Speed Trap #  1  50km/h   50.01	   0.32	   7294	      1	   3.98	  28.33	   3.98	  28.33
-Speed Trap #  2 100km/h  100.00	   0.09	  14589	      1	  10.06	 161.97	  10.06	 161.97
-Drag limited        	 104.55	   0.01	  15253	      1	  14.34	 284.70	  14.34	 284.70
-Average acceleration:    0.206 [G]
-Peak acceleration   :    0.382 [G]
-Elapsed time is 0.242741 seconds.
+Speed Trap #  1  50km/h   50.02	   1.35	   7182	      1	   1.00	   7.02	   1.00	   7.02
+Speed Trap #  2 100km/h  100.02	   0.71	  14372	      1	   2.22	  33.29	   2.22	  33.29
+Drag limited        	 113.21	   0.01	  16273	      1	   5.49	 133.66	   5.49	 133.66
+Average acceleration:    0.584 [G]
+Peak acceleration   :    1.499 [G]
+Elapsed time is 0.175551 seconds.
 ===============================================================================
 Deceleration simulation started:
-Initial Speed: 104.5523 [km/h]
+Initial Speed: 113.2129 [km/h]
 |_______Comment________|_Speed_|_Accel_|_EnRPM_|_Gear__|_Tabs__|_Xabs__|_Trel__|_Xrel_|
 |______________________|[km/h]_|__[G]__|_[rpm]_|__[#]__|__[s]__|__[m]__|__[s]__|_[m]__|
-Speed Trap #  2 100km/h   99.94	  -1.87	  14590	      1	  14.41	 286.66	   0.07	   1.96
-Speed Trap #  1  50km/h   49.96	  -1.53	   7296	      1	  15.25	 304.01	   0.91	  19.32
-Stopped             	   0.00	  -1.42	      0	      1	  16.22	 310.66	   1.88	  25.96
-Average deceleration:    1.572 [G]
-Peak deceleration   :    1.914 [G]
-Elapsed time is 0.037575 seconds.
+Speed Trap #  2 100km/h   99.95	  -2.71	  14381	      1	   5.62	 137.57	   0.13	   3.90
+Speed Trap #  1  50km/h   49.94	  -1.95	   7188	      1	   6.24	 150.34	   0.76	  16.68
+Stopped             	   0.00	  -1.69	      2	      1	   7.04	 155.74	   1.56	  22.08
+Average deceleration:    2.062 [G]
+Peak deceleration   :    2.990 [G]
+Elapsed time is 0.053245 seconds.
 ===============================================================================
 Simulation completed successfully.
-Elapsed time is 0.477429 seconds.
+Elapsed time is 0.366111 seconds.
