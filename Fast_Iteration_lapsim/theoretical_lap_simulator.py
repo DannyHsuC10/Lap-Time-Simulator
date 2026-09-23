@@ -7,6 +7,7 @@ import sys
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
+from scipy.ndimage import gaussian_filter1d
 from scipy.spatial import ConvexHull, cKDTree
 
 from aero.Aero import ModalAeroModel
@@ -25,9 +26,13 @@ BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_SEGMENT_CSV = BASE_DIR / "track" / "fsae_A_2025.csv"
 DEFAULT_TIRE_MAP = BASE_DIR / "Pacejka_tire_model" / "tire_force_map.pkl"
 DEFAULT_PLANNED_OUTPUT = BASE_DIR / "data" / "track_speed_map.png"
+DEFAULT_CURVATURE_OUTPUT = BASE_DIR / "data" / "track_curvature_map.png"
 DEFAULT_LAP_DATA_OUTPUT = BASE_DIR / "data" / "data.pkl"
 DEFAULT_MAX_STRAIGHT_SPEED = 30.0
 GRAVITY = 9.81
+CURVATURE_SMOOTHING_SIGMA = 1.5
+YAW_INERTIA_ALPHA = 0.25
+YAW_INERTIA_MIN_SPEED_SCALE = 0.05
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -348,6 +353,7 @@ class SegmentSpeedPath:
     inner_y: np.ndarray
     outer_x: np.ndarray
     outer_y: np.ndarray
+    curvature_raw: np.ndarray
     curvature: np.ndarray
     length: float
 
@@ -736,6 +742,71 @@ def build_aero_lateral_speed_profile(
     return speed
 
 
+def yaw_moment_capacity(
+    loads: np.ndarray,
+    tire_limit_map: AeroTireLimitMap,
+) -> float:
+    """Estimate sum(|l_i * Fy_i,max|) for the current wheel loads."""
+
+    lever_arms = np.array(
+        [
+            tire_limit_map.car.lf,
+            tire_limit_map.car.lf,
+            tire_limit_map.car.lr,
+            tire_limit_map.car.lr,
+        ],
+        dtype=float,
+    )
+    fy_max = tire_limit_map.max_fy_for_loads(np.asarray(loads, dtype=float))
+    return float(np.sum(np.abs(lever_arms * fy_max)))
+
+
+def apply_yaw_inertia_speed_correction(
+    track: SegmentSpeedPath,
+    steady_speed: np.ndarray,
+    tire_limit_map: AeroTireLimitMap,
+    alpha: float = YAW_INERTIA_ALPHA,
+) -> np.ndarray:
+    """Apply v_new = v_steady * (1 - alpha * J_i)."""
+
+    speed = np.asarray(steady_speed, dtype=float)
+    if len(speed) < 2:
+        return speed.copy()
+
+    edge_order = 2 if len(speed) > 2 else 1
+    dkappa_ds = np.gradient(track.curvature, track.s, edge_order=edge_order)
+    yaw_inertia = float(getattr(tire_limit_map.car, "Izz", 0.0))
+    correction = np.zeros_like(speed)
+
+    for index, (v, kappa_gradient) in enumerate(zip(speed, dkappa_ds)):
+        ay = float(v * v * track.curvature[index])
+        loads = tire_limit_map.wheel_loads(speed=float(v), ax=0.0, ay=ay)
+        moment_capacity = yaw_moment_capacity(loads, tire_limit_map)
+
+        if moment_capacity <= 1e-9:
+            continue
+
+        correction[index] = (
+            yaw_inertia
+            * float(v * v)
+            * abs(float(kappa_gradient))
+            / moment_capacity
+        )
+
+    scale = np.clip(
+        1.0 - float(alpha) * correction,
+        YAW_INERTIA_MIN_SPEED_SCALE,
+        1.0,
+    )
+    log_step(
+        "yaw inertia correction: "
+        f"Izz={yaw_inertia:.1f} kg m^2, "
+        f"alpha={float(alpha):.3f}, "
+        f"J range={np.min(correction):.4f}-{np.max(correction):.4f}"
+    )
+    return speed * scale
+
+
 def build_friction_limited_speed_plan(
     track: SegmentSpeedPath,
     tire_limit_map: AeroTireLimitMap,
@@ -744,6 +815,7 @@ def build_friction_limited_speed_plan(
     curvature_floor: float = 1e-5,
     safety_factor: float = 0.98,
     passes: int = 3,
+    yaw_inertia_alpha: float = YAW_INERTIA_ALPHA,
 ) -> SpeedPlan:
     """
     Build a speed plan with lateral, acceleration, and braking tire limits.
@@ -760,6 +832,12 @@ def build_friction_limited_speed_plan(
         max_straight_speed=max_straight_speed,
         curvature_floor=curvature_floor,
         safety_factor=safety_factor,
+    )
+    lateral_speed_limit = apply_yaw_inertia_speed_correction(
+        track=track,
+        steady_speed=lateral_speed_limit,
+        tire_limit_map=tire_limit_map,
+        alpha=yaw_inertia_alpha,
     )
     speed = lateral_speed_limit.copy()
 
@@ -1526,7 +1604,7 @@ def append_fx_crossing(
 
 
 def build_segment_speed_path(segment_track: SegmentTrack) -> SegmentSpeedPath:
-    """Expand track_segments.py section geometry and section curvature."""
+    """Expand track geometry and smooth section curvature."""
 
     x_parts = []
     y_parts = []
@@ -1560,6 +1638,12 @@ def build_segment_speed_path(segment_track: SegmentTrack) -> SegmentSpeedPath:
         np.diff(x, prepend=x[0]),
         np.diff(y, prepend=y[0]),
     )
+    curvature_raw = np.concatenate(curvature_parts)
+    curvature = gaussian_filter1d(
+        curvature_raw,
+        sigma=CURVATURE_SMOOTHING_SIGMA,
+        mode="nearest",
+    )
 
     return SegmentSpeedPath(
         x=x,
@@ -1569,9 +1653,66 @@ def build_segment_speed_path(segment_track: SegmentTrack) -> SegmentSpeedPath:
         inner_y=np.concatenate(inner_y_parts),
         outer_x=np.concatenate(outer_x_parts),
         outer_y=np.concatenate(outer_y_parts),
-        curvature=np.concatenate(curvature_parts),
+        curvature_raw=curvature_raw,
+        curvature=curvature,
         length=float(sum(section.length for section in segment_track.sections)),
     )
+
+
+def plot_curvature_map(
+    track: SegmentSpeedPath,
+    output_path: str | Path = DEFAULT_CURVATURE_OUTPUT,
+) -> Path:
+    """Save XY curvature color map and curvature-vs-distance diagnostic plot."""
+
+    points = np.column_stack((track.x, track.y))
+    segments = np.stack((points[:-1], points[1:]), axis=1)
+
+    line_collection = LineCollection(
+        segments,
+        cmap="turbo",
+        norm=plt.Normalize(float(np.min(track.curvature)), float(np.max(track.curvature))),
+    )
+    line_collection.set_array(track.curvature[:-1])
+    line_collection.set_linewidth(3.0)
+
+    fig, (ax_xy, ax_kappa) = plt.subplots(
+        2,
+        1,
+        figsize=(11, 10),
+        gridspec_kw={"height_ratios": [3.0, 1.2]},
+    )
+    ax_xy.add_collection(line_collection)
+    ax_xy.plot(track.inner_x, track.inner_y, color="0.25", linewidth=0.8, alpha=0.65)
+    ax_xy.plot(track.outer_x, track.outer_y, color="0.25", linewidth=0.8, alpha=0.65)
+    ax_xy.scatter(track.x[0], track.y[0], color="black", s=35, label="Start")
+    cbar = fig.colorbar(line_collection, ax=ax_xy)
+    cbar.set_label("Curvature [1/m]")
+
+    ax_xy.set_aspect("equal", adjustable="box")
+    ax_xy.set_xlabel("X [m]")
+    ax_xy.set_ylabel("Y [m]")
+    ax_xy.set_title("Track Curvature Map")
+    ax_xy.grid(True, linestyle=":", linewidth=0.6)
+    ax_xy.legend(loc="best")
+
+    ax_kappa.plot(track.s, track.curvature_raw, color="0.65", linewidth=1.0, label="raw")
+    ax_kappa.plot(track.s, track.curvature, color="tab:blue", linewidth=1.4, label="smoothed")
+    ax_kappa.set_xlabel("Distance [m]")
+    ax_kappa.set_ylabel("Curvature [1/m]")
+    ax_kappa.grid(True, linestyle=":", linewidth=0.6)
+    ax_kappa.legend(loc="best")
+    fig.tight_layout()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    log_step(f"saving curvature figure to {output_path}")
+    fig.savefig(output_path, dpi=180)
+    log_step("showing curvature figure; close the figure window to continue speed planning")
+    plt.show()
+    log_step("curvature figure closed")
+    plt.close(fig)
+    return output_path
 
 
 def plot_speed_map(
@@ -1664,6 +1805,8 @@ def main() -> None:
     )
     log_step("building track speed path")
     track = build_segment_speed_path(segment_track)
+    log_step("plotting curvature map")
+    curvature_output_path = plot_curvature_map(track)
     log_step("initializing car and power/brake limits")
     car = Car()
     power_brake_limit = PowerBrakeSystemLimit(car)
@@ -1731,6 +1874,7 @@ def main() -> None:
     print(f"Planned steady-state wheel load range: {np.min(speed_plan.wheel_loads):.1f} - {np.max(speed_plan.wheel_loads):.1f} N")
     print(f"Planned downforce range: {np.min(speed_plan.downforce):.1f} - {np.max(speed_plan.downforce):.1f} N")
     print(f"Fx/Fy planned lap time: {planned_lap_time:.3f} s")
+    print(f"Saved curvature map: {curvature_output_path}")
     print(f"Saved Fx/Fy planned map: {planned_output_path}")
     print(f"Saved planned lap data: {lap_data_output_path}")
 

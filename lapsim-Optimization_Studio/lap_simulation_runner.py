@@ -6,9 +6,17 @@ from pathlib import Path
 from typing import Callable, Mapping
 
 import numpy as np
+from scipy.ndimage import gaussian_filter1d
 
 import theoretical_lap_simulator as lapsim
 from car import Car_simplify
+from Inertia.COG_movable import calculate_vehicle_inertia
+
+
+CURVATURE_SMOOTHING_SIGMA = 1.5
+YAW_INERTIA_ALPHA = 0.25# 單圈適用0.25
+YAW_INERTIA_MIN_SPEED_SCALE = 0.05
+INERTIA_DATA_DIR = Path(__file__).resolve().parent / "Inertia"
 
 
 @dataclass(frozen=True)
@@ -29,6 +37,9 @@ class LapSimulationConfig:
     brake_entry_iterations: int = 6
     speed_cache_decimals: int = 1
     curvature_cache_decimals: int = 4
+    curvature_smoothing_sigma: float = CURVATURE_SMOOTHING_SIGMA
+    yaw_inertia_alpha: float = YAW_INERTIA_ALPHA
+    initial_speed_mps: float | None = None
     include_rolling_resistance: bool = True
     collect_diagnostics: bool = False
 
@@ -54,13 +65,21 @@ class SpeedOnlyPlan:
 
 
 @lru_cache(maxsize=8)
-def cached_track(segment_csv: str, track_width: float, ds: float) -> lapsim.SegmentSpeedPath:
+def cached_track(
+    segment_csv: str,
+    track_width: float,
+    ds: float,
+    curvature_smoothing_sigma: float,
+) -> lapsim.SegmentSpeedPath:
     segment_track = lapsim.SegmentTrack(
         csv_file=Path(segment_csv),
         track_width=track_width,
         ds=ds,
     )
-    return build_segment_speed_path(segment_track)
+    return build_segment_speed_path(
+        segment_track,
+        curvature_smoothing_sigma=curvature_smoothing_sigma,
+    )
 
 
 @lru_cache(maxsize=4)
@@ -68,7 +87,39 @@ def cached_tire_map(map_path: str) -> lapsim.TireForceMap:
     return lapsim.TireForceMap.load(Path(map_path))
 
 
-def build_segment_speed_path(segment_track: lapsim.SegmentTrack) -> lapsim.SegmentSpeedPath:
+@lru_cache(maxsize=64)
+def cached_vehicle_izz(
+    frontwheel_track: float,
+    rearwheel_track: float,
+    frontwheel_axle: float,
+    rearwheel_axle: float,
+    data_dir: str,
+) -> float:
+    inertia = calculate_vehicle_inertia(
+        frontwheel_track=frontwheel_track,
+        rearwheel_track=rearwheel_track,
+        frontwheel_axle=frontwheel_axle,
+        rearwheel_axle=rearwheel_axle,
+        data_dir=data_dir,
+    )
+    return float(inertia["Izz"])
+
+
+def update_car_inertia_from_geometry(car: Car_simplify) -> Car_simplify:
+    car.Izz = cached_vehicle_izz(
+        round(float(car.tf), 9),
+        round(float(car.tr), 9),
+        round(float(car.lf), 9),
+        round(float(-car.lr), 9),
+        str(INERTIA_DATA_DIR),
+    )
+    return car
+
+
+def build_segment_speed_path(
+    segment_track: lapsim.SegmentTrack,
+    curvature_smoothing_sigma: float = CURVATURE_SMOOTHING_SIGMA,
+) -> lapsim.SegmentSpeedPath:
     x_parts = []
     y_parts = []
     inner_x_parts = []
@@ -102,6 +153,16 @@ def build_segment_speed_path(segment_track: lapsim.SegmentTrack) -> lapsim.Segme
         np.diff(y, prepend=y[0]),
     )
 
+    curvature_raw = np.concatenate(curvature_parts)
+    if curvature_smoothing_sigma > 0.0:
+        curvature = gaussian_filter1d(
+            curvature_raw,
+            sigma=float(curvature_smoothing_sigma),
+            mode="nearest",
+        )
+    else:
+        curvature = curvature_raw.copy()
+
     return lapsim.SegmentSpeedPath(
         x=x,
         y=y,
@@ -110,7 +171,7 @@ def build_segment_speed_path(segment_track: lapsim.SegmentTrack) -> lapsim.Segme
         inner_y=np.concatenate(inner_y_parts),
         outer_x=np.concatenate(outer_x_parts),
         outer_y=np.concatenate(outer_y_parts),
-        curvature=np.concatenate(curvature_parts),
+        curvature=curvature,
         length=float(sum(section.length for section in segment_track.sections)),
     )
 
@@ -334,6 +395,11 @@ def apply_car_parameters(car: Car_simplify, parameters: Mapping[str, float]) -> 
     if hasattr(car, "aero") and hasattr(car.aero, "track"):
         car.aero.track = (car.tf + car.tr) / 2.0
 
+    if hasattr(car, "rebuild_shock_list"):
+        car.rebuild_shock_list()
+
+    update_car_inertia_from_geometry(car)
+
     if hasattr(car, "_lap_runner_wheel_rate_cache"):
         delattr(car, "_lap_runner_wheel_rate_cache")
 
@@ -371,6 +437,69 @@ def build_aero_lateral_speed_profile_fast(
         speed[index] = low
 
     return speed
+
+
+def yaw_moment_capacity_fast(
+    loads: np.ndarray,
+    tire_limit_map: lapsim.AeroTireLimitMap,
+) -> float:
+    lever_arms = np.array(
+        [
+            tire_limit_map.car.lf,
+            tire_limit_map.car.lf,
+            tire_limit_map.car.lr,
+            tire_limit_map.car.lr,
+        ],
+        dtype=float,
+    )
+    fy_max = tire_limit_map.max_fy_for_loads(np.asarray(loads, dtype=float))
+    return float(np.sum(np.abs(lever_arms * fy_max)))
+
+
+def apply_yaw_inertia_speed_correction_fast(
+    track: lapsim.SegmentSpeedPath,
+    steady_speed: np.ndarray,
+    tire_limit_map: lapsim.AeroTireLimitMap,
+    alpha: float = YAW_INERTIA_ALPHA,
+) -> np.ndarray:
+    speed = np.asarray(steady_speed, dtype=float)
+    if len(speed) < 2:
+        return speed.copy()
+
+    yaw_inertia = float(getattr(tire_limit_map.car, "Izz", 0.0))
+    if yaw_inertia <= 0.0 or alpha <= 0.0:
+        return speed.copy()
+
+    edge_order = 2 if len(speed) > 2 else 1
+    dkappa_ds = np.gradient(track.curvature, track.s, edge_order=edge_order)
+    correction = np.zeros_like(speed)
+
+    for index, (v, kappa_gradient) in enumerate(zip(speed, dkappa_ds)):
+        ay = float(v * v * track.curvature[index])
+        loads = fast_wheel_load_state(
+            tire_limit_map=tire_limit_map,
+            speed=float(v),
+            ax=0.0,
+            ay=ay,
+        ).loads
+        moment_capacity = yaw_moment_capacity_fast(loads, tire_limit_map)
+
+        if moment_capacity <= 1e-9:
+            continue
+
+        correction[index] = (
+            yaw_inertia
+            * float(v * v)
+            * abs(float(kappa_gradient))
+            / moment_capacity
+        )
+
+    scale = np.clip(
+        1.0 - float(alpha) * correction,
+        YAW_INERTIA_MIN_SPEED_SCALE,
+        1.0,
+    )
+    return speed * scale
 
 
 def drive_accel_at_speed_fast(
@@ -547,7 +676,18 @@ def build_friction_limited_speed_only(
         safety_factor=safety_factor,
         iterations=config.lateral_speed_iterations,
     )
+    lateral_speed_limit = apply_yaw_inertia_speed_correction_fast(
+        track=track,
+        steady_speed=lateral_speed_limit,
+        tire_limit_map=tire_limit_map,
+        alpha=config.yaw_inertia_alpha,
+    )
     speed = lateral_speed_limit.copy()
+    if config.initial_speed_mps is not None and len(speed) > 0:
+        speed[0] = min(
+            speed[0],
+            max(float(config.initial_speed_mps), 0.0),
+        )
     accel_cache: dict[tuple[str, float, float], float] = {}
 
     total_passes = max(int(passes), 1)
@@ -604,11 +744,14 @@ def run_lap_simulation(
         car = car_factory() if car is None else car
         if parameters:
             apply_car_parameters(car, parameters)
+        else:
+            update_car_inertia_from_geometry(car)
 
         track = cached_track(
             str(Path(config.segment_csv).resolve()),
             config.track_width,
             config.ds,
+            config.curvature_smoothing_sigma,
         )
         power_brake_limit = lapsim.PowerBrakeSystemLimit(car)
         tire_limit_map = build_cached_tire_limit_map(

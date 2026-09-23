@@ -58,6 +58,7 @@ class Car_simplify:
 
         # ============================= Mass
         self.m = 320
+        self.Izz = 130
 
         # ============================(輪胎)
         self.free_radius = 205.73999999999998/1000 # m
@@ -108,10 +109,17 @@ class Car_simplify:
         )
 
         # =========================================== 避震器
-        heave_f = LinearKC(k=56000/4,c=2700/4,name="heave_f")# 30000
-        heave_r = LinearKC(k=44800/4,c=2240/4,name="heave_r")# 28000
-        roll_f = LinearKC(k=80000/4,c=3500/4,name="roll_f")#25000
-        roll_r = LinearKC(k=64000/4,c=3150/4,name="roll_r")#22000
+        self.K_heave_f = 56000
+        self.K_heave_rate = 0.8
+        self.K_roll_f = 80000
+        self.K_roll_rate = 0.8
+        self.rebuild_shock_list()
+
+    def rebuild_shock_list(self):
+        heave_f = LinearKC(k=self.K_heave_f/4,c=2700/4,name="heave_f")# 30000
+        heave_r = LinearKC(k=self.K_heave_f*self.K_heave_rate/4,c=2240/4,name="heave_r")# 28000
+        roll_f = LinearKC(k=self.K_roll_f/4,c=3500/4,name="roll_f")#25000
+        roll_r = LinearKC(k=self.K_roll_f*self.K_roll_rate/4,c=3150/4,name="roll_r")#22000
 
         self.shock_list = [heave_f,heave_r,roll_f,roll_r]
 
