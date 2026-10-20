@@ -15,6 +15,7 @@ class ModalAeroModel:
 
         Khh=0.0,
         Kpp=0.0,
+        Krr=0.0,
 
         CD0=1.0,
         Kd_h=0.0,
@@ -44,6 +45,7 @@ class ModalAeroModel:
 
         self.Khh = Khh
         self.Kpp = Kpp
+        self.Krr = Krr
 
         self.CD0 = CD0
         self.Kd_h = Kd_h
@@ -122,6 +124,8 @@ class ModalAeroModel:
             self.Khh*qh**2
             +
             self.Kpp*qp**2
+            +
+            self.Krr*qr**2
         )
 
         CD = (

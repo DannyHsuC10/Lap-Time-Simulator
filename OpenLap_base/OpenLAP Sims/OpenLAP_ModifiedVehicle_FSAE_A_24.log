@@ -7,8 +7,8 @@ _  / / /__  __ \  _ \_  __ \_  / __  /| |_  /_/ /
 =================================================
 Vehicle: ModifiedVehicle
 Track:   FSAE_A_24
-Date:    21/09/2026
-Time:    20:31:36
+Date:    03/10/2026
+Time:    04:30:56
 =================================================
 Simulation started.
 Maximum speed calculated at all points.
@@ -1394,7 +1394,7 @@ ________________________________________________
      19	    288	      2	  277.8	  19.13	  19.57
 ________________________________________________
 Velocity profile calculated successfully.
-Solver time is: 0.191974 [s]
+Solver time is: 0.189956 [s]
 Post-processing initialised.
 Correct solution selected from modes.
 Laptime calculated.
@@ -1410,4 +1410,4 @@ Simulation completed.
 Laptime   :  90.471 [s]
 Sector   1:  90.321 [s]
 Plots created and saved.
-Elapsed time is: 2.606367 [s]
+Elapsed time is: 4.448328 [s]

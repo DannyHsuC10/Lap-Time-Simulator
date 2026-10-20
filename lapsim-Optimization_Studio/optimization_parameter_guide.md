@@ -14,17 +14,16 @@ Both optimizers use the same basic pattern:
 
 ## Current Optimization Variables
 
-Both optimizers currently optimize:
+The main track optimizer (`track_parameter_optimizer.py`) currently optimizes:
 
 ```python
-tf
-tr
-K_heave_rate
-K_roll_rate
+K_heave_gain
+K_roll_gain
 ```
 
-`tf` and `tr` are front and rear track width.  
-`K_heave_rate` and `K_roll_rate` are rear/front stiffness ratios used by `car.py`.
+`K_heave_gain` multiplies both front and rear heave spring rates. `K_roll_gain`
+multiplies both front and rear roll spring rates. The front/rear ratios remain
+fixed by `K_heave_rate` and `K_roll_rate` on `Car_simplify`.
 
 ## Add A New Optimization Variable
 
@@ -43,14 +42,14 @@ If the variable changes derived data, add or reuse a rebuild method.
 Example:
 
 ```python
-def rebuild_shock_list(self):
+def rebuild_suspension_stiffness(self):
     ...
 ```
 
 For suspension stiffness variables, `lap_simulation_runner.py` already calls:
 
 ```python
-car.rebuild_shock_list()
+car.rebuild_suspension_stiffness()
 ```
 
 after applying parameters.
@@ -153,13 +152,11 @@ current = np.array([parameter.initial for parameter in parameters])
 
 So every `current[index]`, `candidate[index]`, and `step[index]` must match the order of `parameters`.
 
-Current order:
+The main track optimizer's current parameter order:
 
 ```python
-0: tf
-1: tr
-2: K_heave_rate
-3: K_roll_rate
+0: K_heave_gain
+1: K_roll_gain
 ```
 
 ## Track Width Mismatch Penalty

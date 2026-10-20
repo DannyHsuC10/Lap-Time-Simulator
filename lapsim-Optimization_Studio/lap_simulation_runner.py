@@ -30,7 +30,10 @@ class LapSimulationConfig:
     aero_enabled: bool = True
     fz_samples: int = 25
     tire_fx_samples: int = 301
-    attitude_iterations: int = 1
+    # Iterate aero loads and suspension attitude together. One pass computes
+    # suspension deflection only after the loads have already been fixed, so
+    # spring stiffness cannot feed back into tire loads in that pass.
+    attitude_iterations: int = 3
     speed_plan_passes: int = 3
     lateral_speed_iterations: int = 14
     accel_limit_iterations: int = 6
@@ -313,10 +316,10 @@ def fast_wheel_load_state(
     car = tire_limit_map.car
     aero_result = tire_limit_map.aero_result_from_attitude(speed, 0.0, 0.0, 0.0)
 
-    k_heave_front = wheel_rate_from_cache(car, 0)
-    k_heave_rear = wheel_rate_from_cache(car, 1)
-    k_roll_front = wheel_rate_from_cache(car, 2)
-    k_roll_rear = wheel_rate_from_cache(car, 3)
+    k_heave_front = car.k_heave_front
+    k_heave_rear = car.k_heave_rear
+    k_roll_front = car.k_roll_front
+    k_roll_rear = car.k_roll_rear
     pitch_stiffness = k_heave_front + k_heave_rear
     roll_stiffness = k_roll_front + k_roll_rear
     front_ratio = car.lr / car.l
@@ -364,17 +367,6 @@ def fast_wheel_load_state(
     )
 
 
-def wheel_rate_from_cache(car: Car_simplify, shock_index: int) -> float:
-    cache = getattr(car, "_lap_runner_wheel_rate_cache", None)
-    if cache is None:
-        cache = {}
-        setattr(car, "_lap_runner_wheel_rate_cache", cache)
-
-    if shock_index not in cache:
-        cache[shock_index] = lapsim.wheel_rate_from_kc(car, shock_index)
-    return float(cache[shock_index])
-
-
 def apply_car_parameters(car: Car_simplify, parameters: Mapping[str, float]) -> Car_simplify:
     for name, value in parameters.items():
         if not hasattr(car, name):
@@ -395,8 +387,8 @@ def apply_car_parameters(car: Car_simplify, parameters: Mapping[str, float]) -> 
     if hasattr(car, "aero") and hasattr(car.aero, "track"):
         car.aero.track = (car.tf + car.tr) / 2.0
 
-    if hasattr(car, "rebuild_shock_list"):
-        car.rebuild_shock_list()
+    if hasattr(car, "rebuild_suspension_stiffness"):
+        car.rebuild_suspension_stiffness()
 
     update_car_inertia_from_geometry(car)
 

@@ -33,13 +33,13 @@ class OptimizationTarget:
 # Examples:
 #   OptimizationTarget("tf", lower_multiplier=0.95, upper_multiplier=1.05, unit_suffix=" m")
 #   OptimizationTarget("tr", lower_multiplier=0.97, upper_multiplier=1.05, unit_suffix=" m")
-#   OptimizationTarget("K_heave_rate", lower=0.2, upper=1.8)
-#   OptimizationTarget("K_roll_rate", lower=0.2, upper=1.8)
+#   OptimizationTarget("K_heave_gain", lower=0.5, upper=1.5)
+#   OptimizationTarget("K_roll_gain", lower=0.5, upper=1.5)
 OPTIMIZATION_TARGETS: tuple[OptimizationTarget, ...] = (
-#    OptimizationTarget("K_heave_rate", lower_multiplier=0.5, upper_multiplier=1.5),
-#    OptimizationTarget("K_roll_rate", lower_multiplier=0.5, upper_multiplier=1.5),
-   OptimizationTarget("tf", lower_multiplier=0.95, upper_multiplier=1.05, unit_suffix=" m"),
-   OptimizationTarget("tr", lower_multiplier=0.97, upper_multiplier=1.05, unit_suffix=" m"),
+    OptimizationTarget("K_heave_gain", lower=0.5, upper=1.5),
+    OptimizationTarget("K_roll_gain", lower=0.5, upper=1.5),
+#   OptimizationTarget("tf", lower_multiplier=0.95, upper_multiplier=1.05, unit_suffix=" m"),
+#   OptimizationTarget("tr", lower_multiplier=0.97, upper_multiplier=1.05, unit_suffix=" m"),
 )
 
 # Use this when a parameter should be fixed during optimization but still passed

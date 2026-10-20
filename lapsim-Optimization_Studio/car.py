@@ -5,8 +5,6 @@ import pandas as pd
 from scipy.interpolate import interp1d
 
 import numpy as np
-from Suspension_sys.KC_sys import *
-from Suspension_sys.sus_geo import *
 from aero.Aero import ModalAeroModel
 
 # 取得目前這個 .py 檔案的絕對路徑
@@ -50,8 +48,8 @@ class Car_simplify:
         self.lf = 0.7498400000000001 # CG>>fa
         self.lr = self.l-self.lf # CG>>ra
 
-        self.tf = 1.28 # front_track
-        self.tr = 1.24 # rear_track
+        self.tf = 1.25 # front_track
+        self.tr = 1.25 # rear_track
 
         self.h_cog = 0.3016451511 # 重心高
         self.h_cg = self.h_cog
@@ -90,10 +88,11 @@ class Car_simplify:
             CD0=1.8,
 
             Kh=-5.0,
-            Kp=20.0,
-            Kr=5.0,
+            Kp=0.0,
+            Kr=0.0,
             Khh=50.0,
-            Kpp=30.0,
+            Kpp=40.0,
+            Krr=40.0,
 
             Kd_h=0.0,
             Kd_p=0.0,
@@ -113,15 +112,17 @@ class Car_simplify:
         self.K_heave_rate = 0.8
         self.K_roll_f = 80000
         self.K_roll_rate = 0.8
-        self.rebuild_shock_list()
+        # Shared scale factors for front and rear heave/roll spring rates.
+        self.K_heave_gain = 1.0
+        self.K_roll_gain = 1.0
+        self.rebuild_suspension_stiffness()
 
-    def rebuild_shock_list(self):
-        heave_f = LinearKC(k=self.K_heave_f/4,c=2700/4,name="heave_f")# 30000
-        heave_r = LinearKC(k=self.K_heave_f*self.K_heave_rate/4,c=2240/4,name="heave_r")# 28000
-        roll_f = LinearKC(k=self.K_roll_f/4,c=3500/4,name="roll_f")#25000
-        roll_r = LinearKC(k=self.K_roll_f*self.K_roll_rate/4,c=3150/4,name="roll_r")#22000
-
-        self.shock_list = [heave_f,heave_r,roll_f,roll_r]
+    def rebuild_suspension_stiffness(self):
+        """Update the four stiffness values used by the steady-state model."""
+        self.k_heave_front = self.K_heave_f * self.K_heave_gain
+        self.k_heave_rear = self.K_heave_f * self.K_heave_rate * self.K_heave_gain
+        self.k_roll_front = self.K_roll_f * self.K_roll_gain
+        self.k_roll_rear = self.K_roll_f * self.K_roll_rate * self.K_roll_gain
 
     def get_motor_torque_data(self,speed_rpm):#取得馬達資料
         return motor_torque_lookup(speed_rpm)

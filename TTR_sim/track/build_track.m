@@ -12,8 +12,8 @@ function track = build_track(segments, ds)
     % Curvature smoothing
     % =========================================================
     kappa = kappa_raw;
-    %kappa = smoothdata(kappa_raw,'gaussian',50);% 較佳點
-    %kappa = smoothdata(kappa,'gaussian',100);% 幾何理想化(不適合實際狀況)
+    kappa = smoothdata(kappa_raw,'gaussian',50);% 較佳點
+    kappa = smoothdata(kappa,'gaussian',100);% 幾何理想化(不適合實際狀況)
 
     % 避免平滑後直線區出現非常小的假曲率
     kappa(abs(kappa) < 1e-8) = 0;

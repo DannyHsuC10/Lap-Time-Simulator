@@ -12,7 +12,7 @@ from car import Car_simplify
 from Pacejka_tire_model.tire_mapping_tool import TireForceMap
 from power_brake_sys.brake import brake as brake_torque
 from power_brake_sys.motor import Throttle_command
-from Suspension_sys.steady_state.sus_load import wheel_load_stiffness
+from Suspension_sys.sus_load import wheel_load_stiffness
 from track.track_segments import SegmentTrack
 
 Car = Car_simplify
@@ -29,15 +29,6 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 ACCEL_CACHE: dict[tuple[int, str, float, float], float] = {}
-
-
-def wheel_rate_from_kc(car: Car, shock_index: int, corner_count: float = 4.0) -> float:
-    kc = car.shock_list[shock_index]
-    return float(
-        kc.spring.stiffness(0.0)
-        * kc.motion_ratio.ratio(0.0) ** 2
-        * corner_count
-    )
 
 
 @dataclass(frozen=True)
@@ -321,10 +312,10 @@ class AeroTireLimitMap:
                 front_ratio=self.car.lr / self.car.l,
                 track_front=self.car.tf,
                 track_rear=self.car.tr,
-                k_heave_front=wheel_rate_from_kc(self.car, 0),
-                k_heave_rear=wheel_rate_from_kc(self.car, 1),
-                k_roll_front=wheel_rate_from_kc(self.car, 2),
-                k_roll_rear=wheel_rate_from_kc(self.car, 3),
+                k_heave_front=self.car.k_heave_front,
+                k_heave_rear=self.car.k_heave_rear,
+                k_roll_front=self.car.k_roll_front,
+                k_roll_rear=self.car.k_roll_rear,
                 yaw=yaw,
                 return_state=True,
             )
