@@ -42,14 +42,13 @@ class Car_simplify:
     """
 
     def __init__(self):
-
+        
+        self.tf = 1.25 # front_track
+        self.tr = 1.24 # rear_track
         # ============================= Geometry
         self.l = 1.53 # wheelbase
         self.lf = 0.7498400000000001 # CG>>fa
         self.lr = self.l-self.lf # CG>>ra
-
-        self.tf = 1.28 # front_track
-        self.tr = 1.24 # rear_track
 
         self.h_cog = 0.3016451511 # 重心高
         self.h_cg = self.h_cog#
@@ -109,10 +108,10 @@ class Car_simplify:
         # =========================================== 穩態懸吊剛性
         # Heave stiffness is per axle; roll stiffness is per wheel and is
         # converted to axle roll stiffness in Suspension_sys.sus_load.
-        self.k_heave_front =  20000.0  # N/m
-        self.k_heave_rear =  20000.0  # N/m
-        self.k_roll_front = 15000.0  # N/m per wheel
-        self.k_roll_rear = 15000.0  # N/m per wheel
+        self.k_heave_front =  140000  # N/m
+        self.k_heave_rear =  140000  # N/m
+        self.k_roll_front = 100000  # N/m per wheel
+        self.k_roll_rear = 100000  # N/m per wheel
 
     def get_motor_torque_data(self,speed_rpm):#取得馬達資料
         return motor_torque_lookup(speed_rpm)

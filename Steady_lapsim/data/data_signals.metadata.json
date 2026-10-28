@@ -1,0 +1,87 @@
+{
+  "samples": 2487,
+  "wheel_order": [
+    "FL",
+    "FR",
+    "RL",
+    "RR"
+  ],
+  "input_angle_units": {
+    "theta": "deg",
+    "steer": "rad"
+  },
+  "output_units": {
+    "time": "s",
+    "zs_zu_heave": "mm",
+    "roll_pitch_steer": "deg",
+    "acceleration": "m/s^2",
+    "speed": [
+      "m/s",
+      "km/h"
+    ]
+  },
+  "definitions": {
+    "zs": "Recorded sprung corner displacement; sign and reference preserved.",
+    "roll": "theta[0] = front roll; theta[1] = rear roll.",
+    "pitch": "theta[2].",
+    "heave": "Recorded chassis s[2]; not the mean of the four corner displacements.",
+    "steering": "Recorded wheel steer angles; no additional steering geometry is inferred.",
+    "acceleration": "Recorded body-frame a = [ax, ay, az]; no gravity adjustment.",
+    "speed": "sqrt(vx^2 + vy^2); vertical heave velocity excluded."
+  },
+  "unsprung": {
+    "source": "reconstructed from loaded_radius",
+    "reference": "Static equilibrium at zero speed and acceleration on flat road.",
+    "positive_direction": "up",
+    "static_loaded_radius_m": [
+      0.1957586771033162,
+      0.1957586771033162,
+      0.1961465894677382,
+      0.1961465894677382
+    ],
+    "reference_source": "current car.py (assumes original static weight distribution)",
+    "vehicle_mass_kg": 320.0,
+    "gravity_m_s2": 9.81,
+    "front_weight_ratio": 0.5099084967320261,
+    "tire_stiffness_N_m": 80185.0,
+    "free_tire_radius_m": 0.20573999999999998
+  },
+  "input_pkl": "D:\\Danny\\DH3868\\Lap-Time-Simulator\\Steady_lapsim\\data\\data.pkl",
+  "columns": [
+    "time_s",
+    "zs_FL_mm",
+    "zs_FR_mm",
+    "zs_RL_mm",
+    "zs_RR_mm",
+    "zu_FL_mm",
+    "zu_FR_mm",
+    "zu_RL_mm",
+    "zu_RR_mm",
+    "roll_front_deg",
+    "roll_rear_deg",
+    "pitch_deg",
+    "heave_mm",
+    "steer_FL_deg",
+    "steer_FR_deg",
+    "steer_RL_deg",
+    "steer_RR_deg",
+    "ax_m_s2",
+    "ay_m_s2",
+    "az_m_s2",
+    "speed_m_s",
+    "speed_km_h"
+  ],
+  "input_metadata": {
+    "source": "theoretical_lap_simulator.py",
+    "description": "Planned full-lap speed map exported as Vehicle_state samples.",
+    "track_csv": "D:\\Danny\\DH3868\\Lap-Time-Simulator\\Steady_lapsim\\track\\fsae_A_2025.csv",
+    "tire_map": "D:\\Danny\\DH3868\\Lap-Time-Simulator\\Steady_lapsim\\Pacejka_tire_maping\\tire_force_map.pkl",
+    "samples": 2487,
+    "lap_time_s": 93.05129789290265,
+    "vehicle_mass_kg": 320.0,
+    "theta_unit": "deg",
+    "omega_unit": "rad/s",
+    "alpha_unit": "rad/s^2",
+    "note": "Generated from simplified steady-state speed planning. Front/rear roll are set equal for aero attitude; dynamic suspension fields are kinematic estimates, not full transient suspension output."
+  }
+}

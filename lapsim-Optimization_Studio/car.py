@@ -49,7 +49,7 @@ class Car_simplify:
         self.lr = self.l-self.lf # CG>>ra
 
         self.tf = 1.25 # front_track
-        self.tr = 1.25 # rear_track
+        self.tr = 1.24 # rear_track
 
         self.h_cog = 0.3016451511 # 重心高
         self.h_cg = self.h_cog
@@ -83,21 +83,18 @@ class Car_simplify:
         self.aero = ModalAeroModel(
             rho=1.225,
             area=1.2,
-
             CL0=-2.4,
             CD0=1.8,
-
             Kh=-5.0,
-            Kp=0.0,
+            # Zero the absolute-value terms here to isolate the quadratic effect.
+            Kp=0.2,
             Kr=0.0,
             Khh=50.0,
             Kpp=40.0,
-            Krr=40.0,
-
+            Krr=10.0,
             Kd_h=0.0,
             Kd_p=0.0,
             Kd_r=0.0,
-
             front_balance=0.45,
             K_balance_pitch=0.20,
             K_balance_roll=0.10,
@@ -108,10 +105,10 @@ class Car_simplify:
         )
 
         # =========================================== 避震器
-        self.K_heave_f = 56000
+        self.K_heave_f = 70000
         self.K_heave_rate = 0.8
-        self.K_roll_f = 80000
-        self.K_roll_rate = 0.8
+        self.K_roll_f = 100000
+        self.K_roll_rate = 1
         # Shared scale factors for front and rear heave/roll spring rates.
         self.K_heave_gain = 1.0
         self.K_roll_gain = 1.0

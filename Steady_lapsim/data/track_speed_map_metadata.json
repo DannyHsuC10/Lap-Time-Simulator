@@ -1,0 +1,16 @@
+{
+  "lap_time_s": 93.06240693625188,
+  "samples": 2487,
+  "source_pickle": "D:\\Danny\\DH3868\\Lap-Time-Simulator\\Steady_lapsim\\data\\data.pkl",
+  "track_csv": "D:\\Danny\\DH3868\\Lap-Time-Simulator\\Steady_lapsim\\track\\fsae_A_2025.csv",
+  "phase_colors": {
+    "accelerate": "tab:green",
+    "brake": "tab:red",
+    "hold": "0.35"
+  },
+  "not_stored_in_pickle": [
+    "track_inner_boundary",
+    "track_outer_boundary",
+    "lateral_speed_limit"
+  ]
+}

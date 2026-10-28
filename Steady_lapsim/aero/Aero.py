@@ -5,34 +5,35 @@ class ModalAeroModel:
 
     def __init__(
         self,
-        rho=1.225,
-        area=1.2,
-        CL0=-3.0,
+        rho=1.225,              # 空氣密度 (kg/m3)
+        area=1.2,               # 參考面積 (m2)
+        
+        CL0=-2.4,               # 基本CL
+        
+        Kh=-5.0,               # Heave敏感度 (1/m)
+        Kp=0.2,                # Pitch敏感度 (1/m)
+        Kr=0.0,                 # Roll敏感度
+        
+        Khh=50.0,              # Heave二階項
+        Kpp=30.0,              # Pitch二階項
+        Krr=8.0,              # Roll二階項
 
-        Kh=0.0,
-        Kp=0.0,
-        Kr=0.0,
+        CD0=1.8,                # 基本CD
 
-        Khh=0.0,
-        Kpp=0.0,
-        Krr=0.0,
-
-        CD0=1.0,
         Kd_h=0.0,
         Kd_p=0.0,
         Kd_r=0.0,
-
-        # Aero balance
-        front_balance=0.45,
-
-        K_balance_pitch=0.0,
-        K_balance_roll=0.0,
-
-        # vehicle geometry
-        wheelbase=1.55,
-        track=1.25,
-        cop_z=0.0
+        
+        front_balance=0.45,     # 45%前翼、55%後翼
+        K_balance_pitch=0.20,   # Pitch造成Balance改變
+        K_balance_roll=0.10,    # Roll造成左右Balance改變
+        
+        wheelbase=1.55,         # 軸距 (m)
+        track=1.25,              # 軌距 (m)
+        cop_z=0.0,              # 空力中心高度 (m)
     ):
+
+
 
         self.rho = rho
         self.area = area

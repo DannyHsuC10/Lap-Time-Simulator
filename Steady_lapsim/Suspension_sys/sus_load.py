@@ -93,16 +93,11 @@ def wheel_load_stiffness(
 
     M_pitch = mass * ax * cg_height
 
-    K_pitch = k_heave_front + k_heave_rear
+    # Longitudinal transfer is equal and opposite at the two axles.
+    dF_pitch = M_pitch / wheelbase
 
-    pitch_front = M_pitch * k_heave_front / K_pitch
-    pitch_rear = M_pitch * k_heave_rear / K_pitch
-
-    dF_front = pitch_front / wheelbase
-    dF_rear = pitch_rear / wheelbase
-
-    F_front = F_front_static - dF_front
-    F_rear = F_rear_static + dF_rear
+    F_front = F_front_static - dF_pitch
+    F_rear = F_rear_static + dF_pitch
 
     # -------------------------------------------------------
     # Roll load transfer
@@ -125,16 +120,20 @@ def wheel_load_stiffness(
     RL = F_rear / 2 - dF_rear_roll
     RR = F_rear / 2 + dF_rear_roll
 
-    K_roll_front = 2 * k_roll_front * (track_front/2)**2
-    K_roll_rear  = 2 * k_roll_rear * (track_rear/2)**2
+    # Decoupled roll spring travel is half the left-right wheel displacement difference.
+    K_roll_front = k_roll_front * (track_front/2)**2
+    K_roll_rear  = k_roll_rear * (track_rear/2)**2
 
     roll_angle = M_roll / (K_roll_front + K_roll_rear)
 
-    K_pitch = k_heave_front + k_heave_rear
+    K_heave = k_heave_front + k_heave_rear
+
+    # With free heave, the two axle spring deflections give pitch stiffness [Nm/rad].
+    K_pitch = wheelbase**2 / (1.0 / k_heave_front + 1.0 / k_heave_rear)
 
     pitch_angle = M_pitch / K_pitch
 
-    heave = aero / K_pitch
+    heave = aero / K_heave
 
     loads = np.array([FL, FR, RL, RR])
     theta = np.array([roll_angle, roll_angle, pitch_angle, yaw])

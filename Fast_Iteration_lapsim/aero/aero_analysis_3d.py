@@ -33,30 +33,7 @@ class AnalysisState:
 # ============================
 # 建立 Aero Model
 # ============================
-aero = ModalAeroModel(
-    rho=1.225,              # 空氣密度 (kg/m3)
-    area=1.2,               # 參考面積 (m2)
-    
-    CL0=-3.0,               # 基本CL
-    
-    Kh=-5.0,               # Heave敏感度 (1/m)
-    Kp=20.0,                # Pitch敏感度 (1/m)
-    Kr=5.0,                 # Roll敏感度
-    
-    Khh=50.0,              # Heave二階項
-    Kpp=30.0,              # Pitch二階項
-    CD0=1.0,                # 基本CD
-    Kd_h=0.0,
-    Kd_p=0.0,
-    Kd_r=0.0,
-    
-    front_balance=0.45,     # 45%前翼、55%後翼
-    K_balance_pitch=0.20,   # Pitch造成Balance改變
-    K_balance_roll=0.10,    # Roll造成左右Balance改變
-    
-    wheelbase=1.55,         # 軸距 (m)
-    track=1.25              # 軌距 (m)
-)
+aero = ModalAeroModel()
 
 # ============================
 # 参数扫描

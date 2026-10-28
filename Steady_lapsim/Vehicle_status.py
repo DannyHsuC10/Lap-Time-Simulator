@@ -12,16 +12,15 @@ class Vehicle_state:
 
         # wheel
         # =============================================
-        # 簧上 & 簧下
+        # 簧上
         self.zs = np.zeros(4)# 簧上
-
-        self.zu =  np.zeros(4) # 簧下
-
         self.vzs = np.zeros(4)
-        self.vzu = np.zeros(4)
-
         self.azs = np.zeros(4)
-        self.azu = np.zeros(4)# << 輸入
+
+        # Unsprung wheel-center motion relative to static equilibrium; upward positive.
+        self.zu = np.zeros(4)   # m, [FL, FR, RL, RR]
+        self.vzu = np.zeros(4)  # m/s
+        self.azu = np.zeros(4)  # m/s^2
         
         # 對簧上下的力量，並不是正向力量
         self.Fs = np.zeros(4)# << 輸入
@@ -41,7 +40,6 @@ class Vehicle_state:
         self.alpha_w = np.zeros(4)
         self.loaded_radius = np.ones(4) * sus.R_tire
 
-        self.IA = np.zeros(4)
         self.steer = np.zeros(4)
 
         self.SL = np.zeros(4)
@@ -73,9 +71,9 @@ class Vehicle_state:
         self.aero_force = np.zeros(3)
         self.aero_CL = 0.0
         self.aero_CD = 0.0
-        #self.aero_qh = 0.0
-        #self.aero_qp = 0.0
-        #self.aero_qr = 0.0
+        self.aero_qh = 0.0
+        self.aero_qp = 0.0
+        self.aero_qr = 0.0
 
         # 控制命令 ============================================
         # 踏板命令

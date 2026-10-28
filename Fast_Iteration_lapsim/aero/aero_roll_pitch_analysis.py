@@ -15,28 +15,7 @@ def main():
     pitch = 0.0  # m, model pitch coordinate
     roll_deg = np.linspace(-3.0, 3.0, 121)
 
-    aero = ModalAeroModel(
-        rho=1.225,
-        area=1.2,
-        CL0=-2.4,
-        CD0=1.8,
-        Kh=-5.0,
-        # Zero the absolute-value terms here to isolate the quadratic effect.
-        Kp=0.1,
-        Kr=-0.1,
-        Khh=50.0,
-        Kpp=40.0,
-        Krr=40.0,
-        Kd_h=0.0,
-        Kd_p=0.0,
-        Kd_r=0.0,
-        front_balance=0.45,
-        K_balance_pitch=0.20,
-        K_balance_roll=0.10,
-        wheelbase=1.55,
-        track=1.25,
-        cop_z=0.0,
-    )
+    aero = ModalAeroModel()
 
     downforce = np.array(
         [
