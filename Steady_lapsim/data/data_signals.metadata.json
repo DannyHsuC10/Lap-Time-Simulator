@@ -30,7 +30,7 @@
     "speed": "sqrt(vx^2 + vy^2); vertical heave velocity excluded."
   },
   "unsprung": {
-    "source": "reconstructed from loaded_radius",
+    "source": "recorded zu",
     "reference": "Static equilibrium at zero speed and acceleration on flat road.",
     "positive_direction": "up",
     "static_loaded_radius_m": [
@@ -38,13 +38,7 @@
       0.1957586771033162,
       0.1961465894677382,
       0.1961465894677382
-    ],
-    "reference_source": "current car.py (assumes original static weight distribution)",
-    "vehicle_mass_kg": 320.0,
-    "gravity_m_s2": 9.81,
-    "front_weight_ratio": 0.5099084967320261,
-    "tire_stiffness_N_m": 80185.0,
-    "free_tire_radius_m": 0.20573999999999998
+    ]
   },
   "input_pkl": "D:\\Danny\\DH3868\\Lap-Time-Simulator\\Steady_lapsim\\data\\data.pkl",
   "columns": [
@@ -82,6 +76,17 @@
     "theta_unit": "deg",
     "omega_unit": "rad/s",
     "alpha_unit": "rad/s^2",
+    "zu_unit": "m",
+    "vzu_unit": "m/s",
+    "azu_unit": "m/s^2",
+    "unsprung_positive_direction": "up",
+    "unsprung_reference": "Static equilibrium at zero speed and acceleration on flat road.",
+    "static_loaded_radius_m": [
+      0.1957586771033162,
+      0.1957586771033162,
+      0.1961465894677382,
+      0.1961465894677382
+    ],
     "note": "Generated from simplified steady-state speed planning. Front/rear roll are set equal for aero attitude; dynamic suspension fields are kinematic estimates, not full transient suspension output."
   }
 }
