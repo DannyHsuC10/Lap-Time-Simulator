@@ -1,1 +1,0 @@
-"""tire model package."""
