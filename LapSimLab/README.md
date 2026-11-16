@@ -1,8 +1,16 @@
 # LapSimLab 圈速模擬
 
-獨立的繁體中文桌面工具，沿用 `new/lapsim` 的準穩態速度規劃模型。可將整個 `LapSimLab` 資料夾複製到其他位置使用。
+繁體中文圈速模擬工具，沿用 `new/lapsim` 的準穩態速度規劃模型。
 
-## 啟動與操作
+## GitHub Pages 網頁版
+
+網頁版提供內建 FSAE 賽道與自訂 LINE／ARC 賽道 CSV、基本求解設定、賽道速度圖和逐點訊號 CSV 匯出。求解在瀏覽器執行，選取的賽道檔留在本機。Pyodide 和 NumPy 由 GitHub Pages 一併提供。
+
+推送到 `main` 後，GitHub Actions 會建置並發布網頁。若要在本機預覽，從儲存庫根目錄執行 `python LapSimLab/web/build.py dist --serve`，再開啟終端機顯示的本機網址。建置時會下載執行環境。
+
+## 桌面版啟動與操作
+
+可將整個 `LapSimLab` 資料夾複製到其他位置使用。
 
 雙擊 `Start-LapSimLab.bat`，或在此資料夾執行 `python run.py`。需要 Python 3.10 以上、Tkinter 和 NumPy，車輛控制模擬另需 Pygame。可執行 `python -m pip install -r requirements.txt` 安裝 NumPy 和 Pygame。
 

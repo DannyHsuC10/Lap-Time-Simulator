@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LapSimLab 圈速模擬</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="shell heading">
+      <span class="brand">LapSimLab</span>
+      <h1>圈速模擬</h1>
+    </div>
+  </header>
+  <main class="shell workspace">
+    <section class="panel setup" aria-labelledby="inputs-title">
+      <h2 id="inputs-title">模擬設定</h2>
+      <form id="settings">
+        <fieldset id="fields" disabled>
+          <label for="track">賽道 CSV</label>
+          <input type="file" id="track" accept=".csv,text/csv" aria-describedby="track-help">
+          <small id="track-help">未選檔時使用內建的 FSAE 賽道。</small>
+          <label for="solver">求解方式</label>
+          <select id="solver" name="solver"></select>
+          <label for="load_model">輪載與姿態</label>
+          <select id="load_model" name="load_model"></select>
+          <div class="pair">
+            <label>車重（kg）<input name="mass" type="number" step="any" required></label>
+            <label>速度上限（m/s）<input name="max_speed" type="number" step="any" required></label>
+          </div>
+          <label class="check"><input name="aero_enabled" type="checkbox">啟用空力</label>
+          <details>
+            <summary>進階設定</summary>
+            <div class="pair">
+              <label>取樣間距（m）<input name="step_m" type="number" step="any" required></label>
+              <label>賽道寬度（m）<input name="track_width" type="number" step="any" required></label>
+              <label>輪胎使用率（%）<input name="tire_utilization" type="number" step="any" min="0" required></label>
+              <label id="lap-only">最大掃描次數<input name="passes" type="number" min="1" max="30" step="1" required></label>
+              <label id="distance-only" hidden>起始車速（m/s）<input name="initial_speed" type="number" min="0" step="any" required></label>
+            </div>
+          </details>
+        </fieldset>
+        <div class="actions">
+          <button type="submit" id="run" disabled>計算圈速</button>
+          <button type="button" class="secondary" id="cancel" hidden>取消</button>
+          <button type="reset" class="secondary" id="reset" disabled>恢復預設</button>
+        </div>
+      </form>
+      <p id="status" role="status">載入模擬設定…</p>
+    </section>
+    <section class="panel results" aria-labelledby="results-title">
+      <div class="result-heading">
+        <h2 id="results-title">模擬結果</h2>
+        <button type="button" class="secondary" id="download" disabled>匯出 CSV</button>
+      </div>
+      <div class="empty" id="empty">按「計算圈速」查看預估圈速與賽道逐點訊號。</div>
+      <div id="result" hidden>
+        <p id="result-track" class="track-name"></p>
+        <dl class="metrics">
+          <div><dt>預估圈速</dt><dd><output id="lap-time"></output><span>秒</span></dd></div>
+          <div><dt>最高車速</dt><dd><output id="top-speed"></output><span>km/h</span></dd></div>
+          <div><dt>路徑長度</dt><dd><output id="track-length"></output><span>m</span></dd></div>
+          <div><dt>最大橫向加速度</dt><dd><output id="peak-lateral"></output><span>g</span></dd></div>
+        </dl>
+        <p id="warning" hidden></p>
+        <div class="chart-options">
+          <label>圖表
+            <select id="view"><option value="track">賽道</option><option value="distance">距離</option><option value="time">時間</option></select>
+          </label>
+          <label>訊號 <select id="signal"></select></label>
+        </div>
+        <canvas id="chart" role="img" aria-label="圈速訊號圖"></canvas>
+        <div id="legend" class="legend"><span id="legend-min"></span><span class="gradient"></span><span id="legend-max"></span></div>
+        <label class="sample" for="sample">取樣點 <output id="sample-value"></output></label>
+        <input id="sample" type="range" min="0" value="0">
+      </div>
+    </section>
+  </main>
+</body>
+</html>
