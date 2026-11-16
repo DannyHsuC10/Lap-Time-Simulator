@@ -15,6 +15,7 @@ from urllib.request import urlopen
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from english import ENGLISH
+from model_reference import render_references
 
 
 WEB = Path(__file__).resolve().parent
@@ -77,9 +78,6 @@ def build(destination):
             values[field.name] = value
     quadratic_example = defaults.aero_path.with_name("quadratic_aero.json")
 
-    destination.mkdir(parents=True, exist_ok=True)
-    for name in ("index.html", "style.css", "app.js", "worker.js", "charts.js", "curves.js", "ggv-chart.js"):
-        shutil.copyfile(WEB / name, destination / name)
     schema = {
         "defaults": values,
         "models": {
@@ -90,6 +88,12 @@ def build(destination):
         "percentages": sorted(PERCENTAGE_FIELDS),
         "quadraticAeroExample": quadratic_example.name,
     }
+    index = (WEB / "index.html").read_text(encoding="utf-8")
+    index = render_references(index, WEB / "models", schema["models"])
+    destination.mkdir(parents=True, exist_ok=True)
+    for name in ("style.css", "app.js", "worker.js", "charts.js", "curves.js", "ggv-chart.js"):
+        shutil.copyfile(WEB / name, destination / name)
+    (destination / "index.html").write_text(index, encoding="utf-8")
     (destination / "settings.json").write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
     with ZipFile(destination / "solver.zip", "w", ZIP_DEFLATED) as bundle:
         for name in MODULES:

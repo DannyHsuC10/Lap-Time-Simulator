@@ -20,6 +20,7 @@ const conditionalFields = Array.from(fields.querySelectorAll("[data-show]"), (ro
   conditions: row.dataset.show.split(" ").map((term) => term.split("=")),
 }));
 const fileRows = new Map();
+const modelReferences = [];
 const inspectionInputs = {
   motor: new Set(["motor_model", "dc_voltage", "motor_path", "lp03_path"]),
   aero: new Set(["aero_model", "aero_enabled", "aero_path", "wheelbase", "front_track", "rear_track"]),
@@ -60,6 +61,32 @@ function updateInputs() {
       schema.quadraticAeroExample : schema.files[key];
     example.href = new URL(`./inputs/${encodeURIComponent(filename)}`, import.meta.url);
     example.download = filename;
+  }
+  for (const refresh of modelReferences) refresh();
+}
+
+function setupModelReferences() {
+  for (const key of Object.keys(schema.models)) {
+    const select = form.elements[key];
+    const reference = document.createElement("details");
+    reference.className = "model-reference wide";
+    const summary = document.createElement("summary");
+    summary.textContent = "Model Reference";
+    const content = document.createElement("article");
+    content.className = "model-reference-content";
+    reference.append(summary, content);
+    select.closest("label").after(reference);
+
+    let active;
+    const refresh = () => {
+      const variant = key === "aero_model" && !form.elements.aero_enabled.checked ? "disabled" : select.value;
+      if (!reference.open || variant === active) return;
+      const template = byId(`reference-${key}-${variant}`);
+      content.replaceChildren(template.content.cloneNode(true));
+      active = variant;
+    };
+    reference.addEventListener("toggle", refresh);
+    modelReferences.push(refresh);
   }
 }
 
@@ -312,6 +339,7 @@ async function initialize() {
     form.elements[key].replaceChildren(...Object.entries(choices).map(([value, label]) => new Option(label, value)));
   }
   setupFileRows();
+  setupModelReferences();
   restoreDefaults();
   setJob();
   setStatus("Ready to calculate lap time.");

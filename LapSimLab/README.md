@@ -10,8 +10,14 @@
 
 - 在左欄展開 **Motor**、**Aerodynamics** 或 **Tires**，按組內的曲線按鈕即可開啟小視窗。按 **Close** 或 Esc 即可回到原本的圈速結果或 GGV。馬達曲線可讀取 RPM／扭矩 CSV 或按設定的直流電壓查看 LP03 包絡。空力可掃描 Roll／Pitch 並切換力或係數，輪胎可查看四輪合計或單輪的 Fy 峰值與 Fx 上下限。
 - 在結果區點選 **GGV** 再按 **Calculate GGV**，即可查看目前車輛設定的加速度包絡。3D 曲面可拖曳旋轉，2D 切片可比較五個代表車速或查看指定車速。
+- 每個設定分組內的 **Model Reference** 會依目前選項顯示對應的計算方法與公式。英文說明的 Markdown 原始檔位於 `web/models/`，建置時會把 LaTeX 轉成瀏覽器可直接顯示的 MathML。
 
-推送到 `main` 後，GitHub Actions 會建置並發布網頁。若要在本機預覽，從儲存庫根目錄執行 `python LapSimLab/web/build.py dist --serve`，再開啟終端機顯示的本機網址。建置時會下載執行環境。
+推送到 `main` 後，GitHub Actions 會建置並發布網頁。若要在本機預覽，請從儲存庫根目錄安裝網頁建置依賴後啟動預覽，再開啟終端機顯示的本機網址。建置時會下載執行環境。
+
+```powershell
+python -m pip install -r LapSimLab/web/requirements.txt
+python LapSimLab/web/build.py dist --serve
+```
 
 ## 桌面版啟動與操作
 
