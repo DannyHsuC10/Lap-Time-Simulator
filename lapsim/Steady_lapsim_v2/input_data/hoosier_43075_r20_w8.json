@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "source_tir": "analysis/Pacejka_tire_model/tir/Hoosier_43075_R20_W8_candidate.tir",
+  "source_tir_sha256": "494c5fd96a3a56b2d1e8091193862e8998421d2aa649afa4e7f650bef29d5a73",
+  "fz0_n": 800.0,
+  "fz_range_n": [
+    100.0,
+    1400.0
+  ],
+  "camber_range_deg": [
+    -3.0,
+    3.0
+  ],
+  "pressure_psi": 9.0,
+  "pressure_pa": 62052.815638511995,
+  "best_camber_deg": {
+    "fx": 0.0,
+    "fy": 0.75
+  },
+  "fx": {
+    "mu0": 2.145491815607778,
+    "b1": -0.010292675170511025,
+    "b2": -0.06197177005010207,
+    "c2": -0.0031697836337392675,
+    "c4": -1.1132349599272176e-08
+  },
+  "fy": {
+    "mu0": 2.5865793427461283,
+    "b1": -0.11890033573042362,
+    "b2": -0.04779762294176458,
+    "c2": -0.0015903105065110635,
+    "c4": -2.463361006026826e-05
+  },
+  "n": 1.4826747568709562,
+  "fit_errors": {
+    "fx_peak": {
+      "relative_rmse": 0.021097183934233682,
+      "min_relative_error": -0.03613866301518587,
+      "max_relative_error": 0.09885412551226258
+    },
+    "fy_peak": {
+      "relative_rmse": 0.00900938012016398,
+      "min_relative_error": -0.035630215892718975,
+      "max_relative_error": 0.025081424972082766
+    },
+    "combined_radial": {
+      "relative_rmse": 0.01975736874617112,
+      "min_relative_error": -0.060467018593753585,
+      "max_relative_error": 0.09946796236566802,
+      "ellipse_n2_relative_rmse": 0.09096667893165748
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "rho": 1.225,
+  "area": 1.2,
+  "CL0": -2.4,
+  "CD0": 1.8,
+  "Kh": -5.0,
+  "Kp": 25.0,
+  "Kr": 5.0,
+  "Khh": 50.0,
+  "Kpp": 40.0,
+  "Krr": 8.0,
+  "Kd_h": 0.0,
+  "Kd_p": 0.0,
+  "Kd_r": 0.0,
+  "front_balance": 0.45,
+  "K_balance_pitch": 0.20,
+  "K_balance_roll": 0.10,
+  "cop_z": 0.0
+}
