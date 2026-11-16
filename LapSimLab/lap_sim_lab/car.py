@@ -10,7 +10,7 @@ from .settings import Settings
 
 
 class Car:
-    def __init__(self, settings: Settings, *, preload_motor: bool = True):
+    def __init__(self, settings: Settings, *, preload_motor: bool = True, aero_coefficients=None):
         self.settings = settings
         self.m = settings.mass
         self.tf = settings.front_track
@@ -40,13 +40,11 @@ class Car:
         self.aero = None
         if settings.aero_enabled:
             aero_class = QuadraticAeroModel if settings.aero_model == "quadratic" else ModalAeroModel
-            self.aero = aero_class.from_json(
-                settings.aero_path,
-                wheelbase=self.l,
-                track=(self.tf + self.tr) / 2.0,
-                cl0=settings.aero_cl0 if settings.uses_aero_overrides else None,
-                cd0=settings.aero_cd0 if settings.uses_aero_overrides else None,
-            )
+            track = (self.tf + self.tr) / 2.0
+            if aero_coefficients is None:
+                self.aero = aero_class.from_json(settings.aero_path, wheelbase=self.l, track=track)
+            else:
+                self.aero = aero_class.from_coefficients(aero_coefficients, wheelbase=self.l, track=track)
 
     @cached_property
     def motor_curve(self):

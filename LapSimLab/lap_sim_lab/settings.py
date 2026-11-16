@@ -1,10 +1,19 @@
 from dataclasses import dataclass
+from decimal import Decimal, DecimalException
 import math
 from pathlib import Path
 
 
 INPUT_DIR = Path(__file__).resolve().parents[1] / "input_data"
 DEFAULT_ELLIPSE_PATH = INPUT_DIR / "friction_ellipse.json"
+PERCENTAGE_FIELDS = {"tire_utilization", "gear_efficiency"}
+
+
+def parse_percentage(text):
+    try:
+        return float(Decimal(text).scaleb(-2))
+    except DecimalException as error:
+        raise ValueError(f"無法讀取百分比「{text}」。") from error
 
 # Display order follows the detail in each model. Settings below define defaults separately.
 # For the solver and track, prefer whole-lap planning and fidelity to the input geometry.
@@ -22,7 +31,6 @@ MODEL_CHOICES = {
     "motor_model": ("馬達", {"lp03": "LP03 電壓包絡查表", "curve": "轉速／扭矩查表"}),
     "aero_model": ("空力", {"attitude": "姿態空力", "quadratic": "固定係數 v²"}),
     "curvature_model": ("賽道曲率", {"raw": "原始曲率", "smooth": "距離域平滑"}),
-    "rolling_model": ("滾動阻力", {"table": "隨 Pacejka 查表", "constant": "固定滾阻係數", "off": "關閉"}),
 }
 
 
@@ -63,7 +71,6 @@ class Settings:
     motor_model: str = "curve"
     aero_model: str = "attitude"
     curvature_model: str = "raw"
-    rolling_model: str = "table"
     rolling_coefficient: float = 0.015
     tire_table_path: Path = INPUT_DIR / "pacejka_envelope.npz"
     lp03_path: Path = INPUT_DIR / "lp03_voltage_envelope.csv"
@@ -73,7 +80,6 @@ class Settings:
     braking_lookahead: bool = True
     yaw_correction: bool = False
     yaw_inertia: float = 130.0
-    closed_lap: bool = False
     pedal_ratio: float = 2.8
     master_diameter: float = 0.012
     front_caliper_diameter: float = 0.0254
@@ -84,8 +90,6 @@ class Settings:
     pad_mu: float = 0.55
     ellipse_path: Path = DEFAULT_ELLIPSE_PATH
     tire_utilization: float = 1.0
-    aero_cl0: float | None = None
-    aero_cd0: float | None = None
     time_limit_s: float = 120.0
 
     @property
@@ -96,21 +100,12 @@ class Settings:
     def rear_roll_stiffness(self) -> float:
         return self.front_roll_stiffness * self.rear_stiffness_ratio
 
-    @property
-    def uses_aero_overrides(self) -> bool:
-        return self.aero_enabled and self.aero_model == "quadratic"
-
     def validate(self):
         for key, (label, choices) in MODEL_CHOICES.items():
             if getattr(self, key) not in choices:
                 raise ValueError(f"無法辨識「{label}」的選項。")
         if self.load_model == "point_mass" and self.yaw_correction:
             raise ValueError("偏航慣量修正需要逐輪輪載。")
-        if self.uses_aero_overrides:
-            if self.aero_cl0 is not None and not math.isfinite(self.aero_cl0):
-                raise ValueError("基準 CL 須為有限值。")
-            if self.aero_cd0 is not None and (not math.isfinite(self.aero_cd0) or self.aero_cd0 < 0):
-                raise ValueError("基準 CD 須為有限的非負數。")
         for name, label in POSITIVE_FIELDS:
             if not math.isfinite(value := getattr(self, name)) or value <= 0:
                 raise ValueError(f"{label}須為有限的正數。")
@@ -118,18 +113,20 @@ class Settings:
             ("cg_height", "重心高度"),
             ("pedal_force", "踏板力"),
             ("initial_speed", "起始車速"),
-            ("rolling_coefficient", "滾阻係數"),
             ("tire_utilization", "輪胎使用率"),
             ("time_limit_s", "計算時間上限"),
         ):
             if not math.isfinite(value := getattr(self, name)) or value < 0:
                 raise ValueError(f"{label}須為有限的非負數。")
+        if self.tire_model != "table" and (not math.isfinite(self.rolling_coefficient) or self.rolling_coefficient < 0):
+            raise ValueError("固定滾阻係數須為有限的非負數。")
         if self.load_model != "point_mass" and not 0 < self.cg_from_front < self.wheelbase:
             raise ValueError("重心距前軸須大於零且小於軸距。")
         if not 0 < self.safety_factor <= 1:
             raise ValueError("側向安全係數須大於零且不超過 1。")
+        if not 0 <= self.gear_efficiency <= 1:
+            raise ValueError("傳動效率須介於 0% 和 100%。")
         for name, label in (
-            ("gear_efficiency", "傳動效率"),
             ("front_torque_scale", "前輪限扭比例"),
             ("rear_torque_scale", "後輪限扭比例"),
             ("front_brake_bias", "前軸煞車比例"),

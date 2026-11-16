@@ -37,7 +37,7 @@ METHODS = {
 }
 
 
-def describe_models(options, inputs, files, *, aero_enabled, yaw_correction, closed_lap, braking_lookahead):
+def describe_models(options, inputs, files, *, aero_enabled, yaw_correction, braking_lookahead):
     """Describe selected methods using live input text, even during incomplete edits."""
     def section(key, *paragraphs, selection=None):
         label, choices = MODEL_CHOICES[key]
@@ -50,7 +50,7 @@ def describe_models(options, inputs, files, *, aero_enabled, yaw_correction, clo
             "solver",
             "在每個賽道點用二分法找彎速，再前掃加速、後掃煞車。反覆降低不符合限制的速度，直到最大速度改變達到門檻，或用完掃描次數。",
             f"最多 {inputs['passes']} 輪，收斂門檻 {SPEED_PLAN_CONVERGENCE_TOLERANCE:g} m/s。",
-            "首尾等速已啟用，要求路徑首尾相接。" if closed_lap else "首尾各自求速。",
+            "路徑首尾各自求速。",
         )
     else:
         braking = ("先做一次反向煞車前瞻，再用局部縱向力限制向前推進。" if braking_lookahead else
@@ -87,7 +87,7 @@ def describe_models(options, inputs, files, *, aero_enabled, yaw_correction, clo
     }
     tire_section = section(
         "tire_model", METHODS["tire_model"][tire], tire_data[tire],
-        f"輪胎使用率為 {inputs['tire_utilization']}（1 = 100%），整個 Fx／Fy 抓地包絡等比例縮放。",
+        f"輪胎使用率為 {inputs['tire_utilization']} %，整個 Fx／Fy 抓地包絡等比例縮放。",
     )
 
     load = options["load_model"]
@@ -104,11 +104,9 @@ def describe_models(options, inputs, files, *, aero_enabled, yaw_correction, clo
         aero_text = METHODS["aero_model"][options["aero_model"]]
         if options["aero_model"] == "attitude" and point_mass:
             aero_text = "目前輪載模型的升沉、側傾、俯仰皆為 0，因此圈速計算使用 JSON 的零姿態空力。"
-        coefficients = f"空力檔：{files['aero_path']}。所有係數均讀自 JSON。"
+        coefficients = f"空力檔：{files['aero_path']}。"
         if options["aero_model"] == "quadratic":
-            cl = inputs["aero_cl0"] if inputs["aero_cl0"] != "未填" else "採用 JSON"
-            cd = inputs["aero_cd0"] if inputs["aero_cd0"] != "未填" else "採用 JSON"
-            coefficients = f"空力檔：{files['aero_path']}。基準 CL：{cl}，基準 CD：{cd}。"
+            coefficients += "CL0 與 CD0 必填，其他常數可使用預設值。"
         aero = section("aero_model", aero_text, coefficients)
     else:
         aero = section("aero_model", "本次計算的下壓力、風阻與空力中心皆為 0。", selection="關閉")
@@ -127,7 +125,7 @@ def describe_models(options, inputs, files, *, aero_enabled, yaw_correction, clo
                   f"扭矩表：{files['motor_path']}。")
     motor_section = section(
         "motor_model", METHODS["motor_model"][motor],
-        motor_data + f" 齒比 {inputs['gear_ratio']}，傳動效率 {inputs['gear_efficiency']}，"
+        motor_data + f" 齒比 {inputs['gear_ratio']}，傳動效率 {inputs['gear_efficiency']} %，"
         f"前／後輪限扭倍率 {inputs['front_torque_scale']}／{inputs['rear_torque_scale']}。",
     )
     brake = options["brake_model"]
@@ -143,14 +141,10 @@ def describe_models(options, inputs, files, *, aero_enabled, yaw_correction, clo
         brake_inputs += f" 機械利益 {inputs['brake_leverage']}。"
     brakes = section("brake_model", METHODS["brake_model"][brake], brake_inputs)
 
-    rolling = options["rolling_model"]
-    if rolling == "constant":
-        resistance = section("rolling_model", f"滾阻力 = Crr × Fz，目前 Crr = {inputs['rolling_coefficient']}。")
-    elif rolling == "table" and tire == "table":
-        resistance = section("rolling_model", "按輪載插值零滑移的滾阻扭矩，再除以受載半徑換成阻力。")
+    if tire == "table":
+        resistance = ("滾動阻力 · 隨 Pacejka 查表", "按輪載插值零滑移的滾阻扭矩，再除以受載半徑換成阻力。")
     else:
-        explanation = "選用的輪胎模型未提供 Pacejka 滾阻表，目前滾阻為 0。" if rolling == "table" else "滾阻力為 0。"
-        resistance = section("rolling_model", explanation, selection="未套用" if rolling == "table" else None)
+        resistance = ("滾動阻力 · 固定滾阻係數", f"滾阻力 = Crr × Fz，目前 Crr = {inputs['rolling_coefficient']}。")
 
     yaw = ("已勾選，但質點模型沒有逐輪輪載。請關閉修正或改選逐輪模型。" if point_mass else
            f"已啟用，Izz = {inputs['yaw_inertia']} kg·m²。以曲率變化率估算偏航力矩需求，依逐輪側向力可提供的力矩折減彎速。")

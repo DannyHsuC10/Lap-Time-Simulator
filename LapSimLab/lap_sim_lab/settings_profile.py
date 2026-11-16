@@ -10,6 +10,7 @@ from .settings import MODEL_CHOICES, Settings
 
 
 SCHEMA_VERSION = 1
+RETIRED_SETTINGS = {"aero_cl0", "aero_cd0", "rolling_model", "closed_lap"}
 
 
 def save_profile(path: Path, snapshot: dict):
@@ -17,16 +18,22 @@ def save_profile(path: Path, snapshot: dict):
     folder = path.absolute().parent
     values = {}
     for key, value in snapshot.items():
+        if key in RETIRED_SETTINGS:
+            continue
         default = getattr(defaults, key)
         if isinstance(value, Path):
             value = value.absolute()
             value = str(value.relative_to(folder)) if value.is_relative_to(folder) else str(value)
-        elif isinstance(value, str) and (type(default) in (int, float) or default is None):
+        elif isinstance(value, str) and type(default) in (int, float):
             value = _number_or_draft(value, default)
         values[key] = value
 
-    payload = json.dumps({"schema_version": SCHEMA_VERSION, "settings": values},
-                         ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+    write_settings_json(path, {"schema_version": SCHEMA_VERSION, "settings": values})
+
+
+def write_settings_json(path: Path, values: dict):
+    payload = json.dumps(values, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+    folder = path.absolute().parent
     temporary = None
     try:
         with NamedTemporaryFile(mode="w", encoding="utf-8", dir=folder, delete=False) as stream:
@@ -38,9 +45,7 @@ def save_profile(path: Path, snapshot: dict):
             temporary.unlink(missing_ok=True)
 
 
-def _number_or_draft(value: str, default: int | float | None):
-    if default is None and not value.strip():
-        return None
+def _number_or_draft(value: str, default: int | float):
     try:
         number = int(value) if type(default) is int else float(value)
     except ValueError:
@@ -64,6 +69,8 @@ def load_profile(path: Path) -> dict:
     folder = path.absolute().parent
     values = {}
     for key, value in data["settings"].items():
+        if key in RETIRED_SETTINGS:
+            continue
         if key not in names:
             raise ValueError(f"無法辨識設定欄位「{key}」。")
         default = getattr(defaults, key)
@@ -78,7 +85,7 @@ def load_profile(path: Path) -> dict:
         elif isinstance(default, bool):
             if type(value) is not bool:
                 raise ValueError(f"「{key}」須為 true 或 false。")
-        elif not (type(value) in (int, float, str) or (value is None and default is None)):
+        elif type(value) not in (int, float, str):
             raise ValueError(f"「{key}」須為數值或輸入文字。")
         values[key] = value
     return values

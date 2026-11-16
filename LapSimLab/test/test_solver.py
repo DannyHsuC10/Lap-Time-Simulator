@@ -1,3 +1,4 @@
+import csv
 import json
 import unittest
 from dataclasses import replace
@@ -14,12 +15,35 @@ from lap_sim_lab.planner import (
     AeroTireLimits, SegmentSpeedPath, integrate_forward, max_entry_speed_for_braking,
 )
 from lap_sim_lab.settings import Settings
-from lap_sim_lab.simulation import simulate
+from lap_sim_lab.simulation import simulate, write_csv
 from lap_sim_lab.tire import FrictionEllipse, build_tire_model
 from lap_sim_lab.timeout_recovery import describe_model_changes, lower_model_choices, timeout_suggestions
 
 
 class SolverTests(unittest.TestCase):
+    def test_csv_export_omits_zero_columns_and_supports_selected_signals(self):
+        settings = Settings(tire_model="ellipse", load_model="point_mass", aero_model="quadratic", step_m=6)
+        result = simulate(settings)
+        with TemporaryDirectory() as folder:
+            full = Path(folder) / "full.csv"
+            selected = Path(folder) / "selected.csv"
+            write_csv(full, result)
+            write_csv(selected, result, signal_keys=("ay_g", "time_s", "speed_kmh", "distance_m"))
+            with full.open(encoding="utf-8-sig", newline="") as stream:
+                full_rows = list(csv.DictReader(stream))
+            with selected.open(encoding="utf-8-sig", newline="") as stream:
+                selected_rows = list(csv.reader(stream))
+
+        self.assertEqual(len(full_rows), len(result.time))
+        self.assertNotIn("fz_FL_N", full_rows[0])
+        self.assertNotIn("zs_FL_mm", full_rows[0])
+        self.assertIn("phase", full_rows[0])
+        self.assertEqual({float(row["CL"]) for row in full_rows}, {-2.4})
+        self.assertEqual(selected_rows[0], ["distance_m", "time_s", "ay_g", "speed_kmh"])
+        np.testing.assert_allclose(np.asarray(selected_rows[1:], dtype=float).T, (
+            result.track.s, result.time, result.signals["ay_g"].values, result.signals["speed_kmh"].values,
+        ))
+
     def write_ellipse(self, mu_x, mu_y):
         folder = TemporaryDirectory()
         self.addCleanup(folder.cleanup)
@@ -88,6 +112,24 @@ class SolverTests(unittest.TestCase):
         self.assertFalse(limits.balanced_lateral_limits(unloaded, np.zeros(4)).any())
         self.assertIsNone(limits.fx_limits_for_loads_and_fy(unloaded, limits.lateral_forces(100, unloaded)))
 
+    def test_rolling_resistance_follows_selected_tire_model(self):
+        loads = np.array([0.0, 300.0, 600.0, 900.0])
+        radii = np.array([0.20, 0.19, 0.18, 0.17])
+        totals = np.array([0.0, 2400.0])
+        for model in ("ellipse", "superellipse"):
+            with self.subTest(tire_model=model):
+                settings = Settings(tire_model=model, rolling_coefficient=0.021)
+                limits = AeroTireLimits(build_tire_model(settings), Car(settings, preload_motor=False))
+                np.testing.assert_allclose(limits.rolling_resistance(loads, radii), 0.021 * loads)
+                np.testing.assert_allclose(limits.point_mass_rolling(totals), 0.021 * totals)
+
+        settings = Settings(tire_model="table", rolling_coefficient=0.021)
+        tire = build_tire_model(settings)
+        limits = AeroTireLimits(tire, Car(settings, preload_motor=False))
+        with patch.object(tire, "rrt", 0.002 * tire.fz):
+            np.testing.assert_allclose(limits.rolling_resistance(loads, radii), 0.002 * loads / radii)
+            np.testing.assert_allclose(limits.point_mass_rolling(totals), 0.002 * totals / settings.tire_radius)
+
     def test_timeout_recovery_lowers_each_selected_model(self):
         settings = Settings(
             tire_model="superellipse", motor_model="lp03",
@@ -113,13 +155,10 @@ class SolverTests(unittest.TestCase):
         self.assertIs(changes["yaw_correction"], False)
         intermediate = replace(settings, **changes)
         intermediate.validate()
-        self.assertEqual(lower_model_choices(intermediate), {"rolling_model": "off"})
-        lowest = replace(intermediate, rolling_model="off")
-        lowest.validate()
-        self.assertEqual(lower_model_choices(lowest), {})
-        self.assertIn("3 輪降到 2 輪", timeout_suggestions(lowest))
-        self.assertIn("0.5 m 加大到 1 m", timeout_suggestions(lowest))
-        self.assertNotIn("掃描次數", timeout_suggestions(replace(lowest, solver="distance")))
+        self.assertEqual(lower_model_choices(intermediate), {})
+        self.assertIn("3 輪降到 2 輪", timeout_suggestions(intermediate))
+        self.assertIn("0.5 m 加大到 1 m", timeout_suggestions(intermediate))
+        self.assertNotIn("掃描次數", timeout_suggestions(replace(intermediate, solver="distance")))
 
     def test_time_limit_checked_while_reading_track(self):
         with patch("lap_sim_lab.simulation.monotonic", side_effect=(10.0, 10.0, 11.0)):

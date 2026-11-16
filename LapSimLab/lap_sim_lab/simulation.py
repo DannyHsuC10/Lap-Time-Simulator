@@ -37,7 +37,8 @@ class InfeasibleLapError(ValueError):
     """The input was valid, but the speed plan could not cover the track."""
 
 
-def simulate(settings: Settings, progress=None, *, include_signals=True, check_cancelled=None) -> Result:
+def simulate(settings: Settings, progress=None, *, include_signals=True, check_cancelled=None,
+             aero_coefficients=None) -> Result:
     settings.validate()
     limit = settings.time_limit_s
     deadline = monotonic() + limit if limit else None
@@ -58,14 +59,10 @@ def simulate(settings: Settings, progress=None, *, include_signals=True, check_c
     track = build_segment_speed_path(sections)
     if not np.isfinite(track.s[-1]) or track.s[-1] <= 0:
         raise ValueError("賽道路徑須有有限的正長度。")
-    if settings.solver == "lap" and settings.closed_lap:
-        gap = float(np.hypot(track.x[-1] - track.x[0], track.y[-1] - track.y[0]))
-        if gap > 0.1:
-            raise ValueError(f"首尾相距 {gap:.2f} m，無法套用封閉圈首尾等速。")
     if settings.curvature_model == "smooth":
         track = replace(track, curvature=smooth_curvature(track.s, track.curvature, settings.curvature_sigma_m))
     check_deadline()
-    car = Car(settings)
+    car = Car(settings, aero_coefficients=aero_coefficients)
     check_deadline()
     tire = build_tire_model(settings)
     limits = AeroTireLimits(tire, car)
@@ -101,7 +98,7 @@ def simulate(settings: Settings, progress=None, *, include_signals=True, check_c
     return Result(track, plan, time, signals, overspeed_points)
 
 
-def write_csv(path: Path, result: Result):
+def _full_csv_columns(result: Result):
     track, plan = result.track, result.plan
     summary_keys = (
         "distance_m", "time_s", "x_m", "y_m", "curvature_1_m",
@@ -119,8 +116,16 @@ def write_csv(path: Path, result: Result):
         plan.downforce, plan.drag, plan.cl, plan.cd, *plan.cop.T,
     )
     columns = dict(zip(summary_keys, summary_values))
-    for key, signal in result.signals.items():
-        columns[key] = signal.values
+    columns.update((key, signal.values) for key, signal in result.signals.items())
+    return {key: values for key, values in columns.items() if key == "phase" or np.any(values)}
+
+
+def write_csv(path: Path, result: Result, *, signal_keys=None):
+    if signal_keys is None:
+        columns = _full_csv_columns(result)
+    else:
+        columns = {"distance_m": result.track.s, "time_s": result.time}
+        columns.update((key, result.signals[key].values) for key in signal_keys if key not in columns)
     with path.open("w", encoding="utf-8-sig", newline="") as stream:
         writer = csv.writer(stream)
         writer.writerow(columns)

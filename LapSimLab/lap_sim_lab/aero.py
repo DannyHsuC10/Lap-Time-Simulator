@@ -2,26 +2,41 @@ import json
 import math
 from pathlib import Path
 
+
+AERO_COEFFICIENT_KEYS = ("CL0", "CD0")
+
+
+def read_aero_coefficients(path: str | Path) -> dict[str, float]:
+    path = Path(path)
+    try:
+        coefficients = json.loads(path.read_text(encoding="utf-8-sig"))
+        if not isinstance(coefficients, dict):
+            raise ValueError("expected an object with aerodynamic coefficients")
+        for name in AERO_COEFFICIENT_KEYS:
+            if name not in coefficients:
+                raise ValueError(f"{name} is required")
+        for name, value in coefficients.items():
+            if type(value) not in (int, float) or not math.isfinite(value):
+                raise ValueError(f"{name} must be a finite number")
+        return coefficients
+    except (ValueError, TypeError, OverflowError) as error:
+        raise ValueError(f"Invalid aero coefficients in {path}: {error}") from error
+
+
 class ModalAeroModel:
+    coefficient_defaults = {}
 
     @classmethod
-    def from_json(cls, path: str | Path, *, wheelbase: float, track: float,
-                  cl0: float | None = None, cd0: float | None = None):
-        path = Path(path)
+    def from_json(cls, path: str | Path, *, wheelbase: float, track: float):
+        coefficients = read_aero_coefficients(path)
         try:
-            coefficients = json.loads(path.read_text(encoding="utf-8-sig"))
-            if not isinstance(coefficients, dict):
-                raise ValueError("expected an object with aerodynamic coefficients")
-            for name, value in coefficients.items():
-                if type(value) not in (int, float) or not math.isfinite(value):
-                    raise ValueError(f"{name} must be a finite number")
-            if cl0 is not None:
-                coefficients["CL0"] = cl0
-            if cd0 is not None:
-                coefficients["CD0"] = cd0
-            return cls(**coefficients, wheelbase=wheelbase, track=track)
+            return cls.from_coefficients(coefficients, wheelbase=wheelbase, track=track)
         except (ValueError, TypeError, OverflowError) as error:
             raise ValueError(f"Invalid aero coefficients in {path}: {error}") from error
+
+    @classmethod
+    def from_coefficients(cls, coefficients, *, wheelbase: float, track: float):
+        return cls(**(cls.coefficient_defaults | coefficients), wheelbase=wheelbase, track=track)
 
     def __init__(
         self,
@@ -115,6 +130,15 @@ class ModalAeroModel:
 
 class QuadraticAeroModel(ModalAeroModel):
     """Use the zero-attitude coefficients and balance at every speed."""
+
+    coefficient_defaults = {
+        "rho": 1.225,
+        "area": 1.2,
+        "front_balance": 0.45,
+        "cop_z": 0.0,
+        **dict.fromkeys(("Kh", "Kp", "Kr", "Khh", "Kpp", "Krr", "Kd_h", "Kd_p", "Kd_r",
+                         "K_balance_pitch", "K_balance_roll"), 0.0),
+    }
 
     def calculate_from_modal(self, speed, qh, qp, qr):
         return super().calculate_from_modal(speed, 0.0, 0.0, 0.0)

@@ -8,12 +8,8 @@ from .tire import FrictionEllipse, read_tire_json
 
 def lower_model_choices(settings: Settings) -> dict[str, str | bool | Path]:
     changes = {}
-    for key in ("tire_model", "load_model", "motor_model", "brake_model",
-                "aero_model", "rolling_model"):
+    for key in ("tire_model", "load_model", "motor_model", "brake_model", "aero_model"):
         if key == "aero_model" and not settings.aero_enabled:
-            continue
-        if key == "rolling_model" and settings.rolling_model == "table" and settings.tire_model != "table":
-            # The unavailable table already contributes zero rolling resistance.
             continue
         choices = tuple(MODEL_CHOICES[key][1])
         index = choices.index(getattr(settings, key))

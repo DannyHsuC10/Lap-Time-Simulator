@@ -299,23 +299,17 @@ class AeroTireLimits:
         return brake, drive
 
     def rolling_resistance(self, loads: np.ndarray, radii: np.ndarray) -> np.ndarray:
-        model = self.car.settings.rolling_model
-        if model == "constant":
-            return self.car.settings.rolling_coefficient * loads
-        if model == "table" and isinstance(self.tire_model, TabulatedTire):
+        if isinstance(self.tire_model, TabulatedTire):
             return np.where(loads > 0, self.tire_model.rolling_torque(loads) / radii, 0.0)
-        return np.zeros_like(loads)
+        return self.car.settings.rolling_coefficient * loads
 
     def rolling_force(self, state: WheelLoadState, radii: np.ndarray) -> float:
         return float(self.rolling_resistance(state.loads, radii).sum())
 
     def point_mass_rolling(self, total_load):
-        model = self.car.settings.rolling_model
-        if model == "constant":
-            return self.car.settings.rolling_coefficient * total_load
-        if model == "table" and isinstance(self.tire_model, TabulatedTire):
+        if isinstance(self.tire_model, TabulatedTire):
             return np.where(total_load > 0, 4 * self.tire_model.rolling_torque(total_load / 4) / self.car.R_tire, 0.0)
-        return total_load * 0.0
+        return self.car.settings.rolling_coefficient * total_load
 
     def point_mass_fx_limits(self, total_load: float, total_fy: float):
         if isinstance(self.tire_model, FrictionEllipse):
@@ -536,11 +530,8 @@ def iterate_lap(track, lateral_speed_limit, tire_limit_map, power_brake_limit, p
     speed = lateral_speed_limit.copy()
 
     total_passes = max(int(passes), 1)
-    closed = tire_limit_map.car.settings.closed_lap
     for pass_index in range(total_passes):
         speed_before_pass = speed.copy()
-        if closed:
-            speed[0] = speed[-1] = min(speed[0], speed[-1])
         report(f"第 {pass_index + 1}/{total_passes} 輪，向前掃描加速限制")
         for index in range(len(speed) - 1):
             if check_deadline is not None:
@@ -556,8 +547,6 @@ def iterate_lap(track, lateral_speed_limit, tire_limit_map, power_brake_limit, p
             speed[index + 1] = min(speed[index + 1], reachable)
 
         report(f"第 {pass_index + 1}/{total_passes} 輪，向後掃描煞車限制")
-        if closed:
-            speed[0] = speed[-1] = min(speed[0], speed[-1])
         for index in range(len(speed) - 2, -1, -1):
             if check_deadline is not None:
                 check_deadline()
@@ -574,8 +563,6 @@ def iterate_lap(track, lateral_speed_limit, tire_limit_map, power_brake_limit, p
                 ),
             )
 
-        if closed:
-            speed[0] = speed[-1] = min(speed[0], speed[-1])
         pass_speed_change = float(np.max(np.abs(speed_before_pass - speed)))
         if pass_speed_change <= SPEED_PLAN_CONVERGENCE_TOLERANCE:
             return speed, pass_index + 1, True
