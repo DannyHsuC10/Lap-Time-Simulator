@@ -11,6 +11,8 @@ const download = byId("download");
 const status = byId("status");
 const signal = byId("signal");
 const view = byId("view");
+const notesTopic = byId("model-notes-topic");
+const notesContent = byId("model-notes-content");
 const sample = byId("sample");
 const canvas = byId("chart");
 byId("legend").querySelector(".gradient").style.background = trackGradient;
@@ -20,7 +22,6 @@ const conditionalFields = Array.from(fields.querySelectorAll("[data-show]"), (ro
   conditions: row.dataset.show.split(" ").map((term) => term.split("=")),
 }));
 const fileRows = new Map();
-const modelReferences = [];
 const inspectionInputs = {
   motor: new Set(["motor_model", "dc_voltage", "motor_path", "lp03_path"]),
   aero: new Set(["aero_model", "aero_enabled", "aero_path", "wheelbase", "front_track", "rear_track"]),
@@ -62,32 +63,17 @@ function updateInputs() {
     example.href = new URL(`./inputs/${encodeURIComponent(filename)}`, import.meta.url);
     example.download = filename;
   }
-  for (const refresh of modelReferences) refresh();
+  drawModelNotes();
 }
 
-function setupModelReferences() {
-  for (const key of Object.keys(schema.models)) {
-    const select = form.elements[key];
-    const reference = document.createElement("details");
-    reference.className = "model-reference wide";
-    const summary = document.createElement("summary");
-    summary.textContent = "Model Reference";
-    const content = document.createElement("article");
-    content.className = "model-reference-content";
-    reference.append(summary, content);
-    select.closest("label").after(reference);
-
-    let active;
-    const refresh = () => {
-      const variant = key === "aero_model" && !form.elements.aero_enabled.checked ? "disabled" : select.value;
-      if (!reference.open || variant === active) return;
-      const template = byId(`reference-${key}-${variant}`);
-      content.replaceChildren(template.content.cloneNode(true));
-      active = variant;
-    };
-    reference.addEventListener("toggle", refresh);
-    modelReferences.push(refresh);
-  }
+function drawModelNotes() {
+  const key = notesTopic.value;
+  const variant = key === "aero_model" && !form.elements.aero_enabled.checked ? "disabled" : form.elements[key].value;
+  const id = `reference-${key}-${variant}`;
+  if (notesContent.dataset.reference === id) return;
+  notesContent.replaceChildren(byId(id).content.cloneNode(true));
+  notesContent.dataset.reference = id;
+  notesContent.scrollTop = 0;
 }
 
 function setupFileRows() {
@@ -323,11 +309,15 @@ download.addEventListener("click", () => {
   setStatus("Generating CSV…");
   getWorker().postMessage({ type: "export" });
 });
-form.addEventListener("change", () => {
+form.addEventListener("change", (event) => {
+  const field = event.target.name;
+  const topic = field === "aero_enabled" ? "aero_model" : field;
+  if (Object.hasOwn(schema.models, topic)) notesTopic.value = topic;
   updateInputs();
   curves.invalidate();
   if (result && !run.disabled) setStatus("Settings changed. Run the calculation again to update the results.");
 });
+notesTopic.addEventListener("change", drawModelNotes);
 for (const input of [signal, view, sample]) input.addEventListener("input", drawResult);
 new ResizeObserver(drawResult).observe(canvas);
 
@@ -339,7 +329,12 @@ async function initialize() {
     form.elements[key].replaceChildren(...Object.entries(choices).map(([value, label]) => new Option(label, value)));
   }
   setupFileRows();
-  setupModelReferences();
+  for (const select of fields.querySelectorAll("select")) {
+    if (Object.hasOwn(schema.models, select.name)) {
+      const title = select.closest("details").querySelector("summary").textContent.trim();
+      notesTopic.add(new Option(title, select.name));
+    }
+  }
   restoreDefaults();
   setJob();
   setStatus("Ready to calculate lap time.");

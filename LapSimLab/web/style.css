@@ -69,25 +69,29 @@ fieldset { margin: 14px 0; border: 0; padding: 0; min-width: 0; }
   border-bottom: 1px solid var(--line);
   border-radius: 7px 7px 0 0;
 }
-.model-reference {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
+.model-notes-heading { margin-bottom: 16px; }
+.model-notes-heading label { flex: 0 1 230px; }
+.model-notes-heading select { margin-top: .35rem; }
+.model-notes-content {
+  max-height: min(60vh, 660px);
+  overflow: auto;
+  padding: 16px 8px 0 0;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
 }
-.model-reference-content { padding: 12px; overflow-wrap: anywhere; }
-.model-reference-content h3 { margin: 0 0 8px; font-size: 1rem; line-height: 1.3; }
-.model-reference-content h4 { margin: 16px 0 4px; font-size: .875rem; }
-.model-reference-content p { margin: 8px 0; }
-.model-reference-content p:last-child { margin-bottom: 0; }
-.model-reference-content code { color: var(--ink); background: var(--surface); }
-.model-reference-content .math.block {
+.model-notes-content h3 { margin: 0 0 8px; font-size: 1.125rem; line-height: 1.3; }
+.model-notes-content h4 { margin: 16px 0 4px; font-size: .9375rem; }
+.model-notes-content p { margin: 8px 0; }
+.model-notes-content p:last-child { margin-bottom: 0; }
+.model-notes-content code { color: var(--ink); background: var(--surface); }
+.model-notes-content .math.block {
   margin-block: 8px;
   padding: 8px;
   overflow-x: auto;
   background: var(--surface);
   border-radius: 5px;
 }
-.model-reference-content .math.block math { min-width: max-content; }
+.model-notes-content .math.block math { min-width: max-content; }
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 11px; }
 .settings-grid .wide { grid-column: 1 / -1; }
 .settings-grid label:not(.check), .curve-controls label { display: flex; flex-direction: column; gap: .35rem; }
@@ -213,6 +217,7 @@ canvas {
 @media (max-width: 860px) {
   .workspace { grid-template-columns: minmax(0, 1fr); }
   .settings-sections { max-height: none; overflow: visible; }
+  .model-notes-content { max-height: none; overflow: visible; padding-inline-end: 0; }
   .empty { min-height: 180px; }
 }
 @media (max-width: 480px) {

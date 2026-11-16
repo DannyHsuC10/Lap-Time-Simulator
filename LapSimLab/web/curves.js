@@ -139,9 +139,11 @@ export function installCurveTools(request, cancel) {
   }
 
   function select(tool) {
-    byId("lap-panel").hidden = tool !== "lap";
-    ggvPanel.hidden = tool !== "ggv";
-    for (const tab of tabs) tab.setAttribute("aria-pressed", String(tab.dataset.tool === tool));
+    for (const tab of tabs) {
+      const selected = tab.dataset.tool === tool;
+      byId(tab.getAttribute("aria-controls")).hidden = !selected;
+      tab.setAttribute("aria-pressed", String(selected));
+    }
     drawGgv();
   }
 

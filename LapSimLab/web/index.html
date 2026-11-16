@@ -138,10 +138,11 @@
       </form>
       <p id="status" role="status">Loading simulation settings…</p>
     </section>
-    <section class="panel results" aria-label="Lap Results and GGV">
-      <nav class="tool-tabs" aria-label="Result Views">
-        <button type="button" data-tool="lap" aria-pressed="true">Lap Results</button>
-        <button type="button" data-tool="ggv" aria-pressed="false" disabled>GGV</button>
+    <section class="panel results" aria-label="Simulation Views">
+      <nav class="tool-tabs" aria-label="Simulation Views">
+        <button type="button" data-tool="lap" aria-controls="lap-panel" aria-pressed="true">Lap Results</button>
+        <button type="button" data-tool="ggv" aria-controls="ggv-panel" aria-pressed="false" disabled>GGV</button>
+        <button type="button" data-tool="notes" aria-controls="notes-panel" aria-pressed="false" disabled>Model Notes</button>
       </nav>
       <div id="lap-panel">
       <div class="result-heading">
@@ -195,6 +196,13 @@
             <button type="button" class="secondary" data-rotate="reset">Reset View</button>
           </div>
         </div>
+      </section>
+      <section id="notes-panel" aria-labelledby="notes-title" hidden>
+        <div class="result-heading model-notes-heading">
+          <h2 id="notes-title">Model Notes</h2>
+          <label>Topic<select id="model-notes-topic"></select></label>
+        </div>
+        <article id="model-notes-content" class="model-notes-content" tabindex="0"></article>
       </section>
     </section>
   </main>
