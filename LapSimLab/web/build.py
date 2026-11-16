@@ -91,7 +91,7 @@ def build(destination):
     index = (WEB / "index.html").read_text(encoding="utf-8")
     index = render_references(index, WEB / "models", schema["models"])
     destination.mkdir(parents=True, exist_ok=True)
-    for name in ("style.css", "app.js", "worker.js", "charts.js", "curves.js", "ggv-chart.js"):
+    for name in ("icon.svg", "style.css", "app.js", "worker.js", "charts.js", "curves.js", "ggv-chart.js"):
         shutil.copyfile(WEB / name, destination / name)
     (destination / "index.html").write_text(index, encoding="utf-8")
     (destination / "settings.json").write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
