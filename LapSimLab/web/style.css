@@ -54,6 +54,7 @@ h2 { font-size: 19px; font-weight: 700; }
 }
 .setup > h2 { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
 fieldset { margin: 14px 0; border: 0; padding: 0; min-width: 0; }
+.vehicle-import { margin-bottom: 10px; }
 .settings-sections {
   display: grid;
   gap: 8px;

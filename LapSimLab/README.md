@@ -8,6 +8,8 @@
 
 求解在瀏覽器執行，選取的資料檔留在本機。Pyodide 和 NumPy 由 GitHub Pages 一併提供。
 
+- 在 **Simulation Inputs** 點選 **Import Vehicle Initial Settings**，開啟 Vehicle Initial Sizing Lab 匯出的 `Vehicle_initial_settings.json`。網頁會填入 **Suspension and Body** 與 **Brakes**，自動選用質點模型及等效機械利益煞車。**Motor** 的 **Fixed Gear Reduction Ratio** 採用 Initial Sizing 的加速與極速減速比平均值。網頁初次開啟、恢復預設及匯入時，輪胎使用率皆設為 70%，可再手動調整。
+- 匯入的懸吊參數可在切回逐輪模型後查看。LapSimLab 以後／前 Heave 剛性比作為 Heave 與 Roll 的共用比例，並以兩軸平均值表示輪胎垂直剛性。煞車機械利益以指定減速度所需的總煞車力除以踏力計算。若舊版匯出檔缺少原始設計參數，煞車只匯入前軸比例，減速比沿用目前設定。
 - 在左欄展開 **Motor**、**Aerodynamics** 或 **Tires**，按組內的曲線按鈕即可開啟小視窗。按 **Close** 或 Esc 即可回到原本的圈速結果或 GGV。馬達曲線可讀取 RPM／扭矩 CSV 或按設定的直流電壓查看 LP03 包絡。空力可掃描 Roll／Pitch 並切換力或係數，輪胎可查看四輪合計或單輪的 Fy 峰值與 Fx 上下限。
 - 在結果區點選 **GGV** 再按 **Calculate GGV**，即可查看目前車輛設定的加速度包絡。3D 曲面可拖曳旋轉，2D 切片可比較五個代表車速或查看指定車速。
 - 在右側選擇 **Model Notes**，可用 **Topic** 查看各模型的計算方法與公式。變更左側的模型選項時，右側說明會同步切換到對應主題。英文說明的 Markdown 原始檔位於 `web/models/`，建置時會把 LaTeX 轉成瀏覽器可直接顯示的 MathML。

@@ -1,7 +1,7 @@
 """Package the browser app and the shared LapSimLab solver for static hosting."""
 
 import argparse
-from dataclasses import fields
+from dataclasses import fields, replace
 from functools import partial
 from hashlib import sha256
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -67,7 +67,7 @@ def build_runtime(destination):
 
 
 def build(destination):
-    defaults = Settings()
+    defaults = replace(Settings(), tire_utilization=0.7)
     values = {}
     data_files = {}
     for field in fields(defaults):

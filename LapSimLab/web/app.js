@@ -6,6 +6,7 @@ const form = byId("settings");
 const fields = byId("fields");
 const run = byId("run");
 const reset = byId("reset");
+const vehicleSettingsFile = byId("vehicle-settings-file");
 const cancel = byId("cancel");
 const download = byId("download");
 const status = byId("status");
@@ -110,15 +111,111 @@ function setupFileRows() {
   }
 }
 
-function restoreDefaults() {
-  for (const { input } of fileRows.values()) input.value = "";
-  for (const [key, value] of Object.entries(schema.defaults)) {
+function applySettings(values) {
+  for (const [key, value] of Object.entries(values)) {
     const field = form.elements[key];
     if (field.type === "checkbox") field.checked = value;
     else field.value = schema.percentages.includes(key) ? 100 * value : value;
   }
   updateInputs();
 }
+
+function restoreDefaults() {
+  for (const { input } of fileRows.values()) input.value = "";
+  applySettings(schema.defaults);
+}
+
+function vehicleSettings(project) {
+  if (project?.application !== "VehicleInitialSizingLab-DynamicsExport" || ![2, 3].includes(project.schema_version)) {
+    throw new Error("Choose a Vehicle Initial Sizing Dynamics export (version 2 or 3).");
+  }
+  const { vehicle, dynamics, schema_version: version, source_project: source } = project;
+  function number(value, key, allowZero = false, max = Infinity) {
+    if (!Number.isFinite(value) || value < 0 || (!allowZero && value === 0) || value > max) {
+      throw new Error(`Invalid or missing value for ${key}.`);
+    }
+    return value;
+  }
+  function rate(channel, scale) {
+    const stiffness = number(dynamics?.[`${channel}_k`], `dynamics.${channel}_k`);
+    const motionRatio = number(dynamics?.[`${channel}_mr`], `dynamics.${channel}_mr`);
+    return number(scale * stiffness * motionRatio ** 2, `${channel} rate`);
+  }
+
+  const lf = number(vehicle?.lf, "vehicle.lf");
+  const lr = number(vehicle?.lr, "vehicle.lr");
+  const mass = number(vehicle?.m, "vehicle.m");
+  const wheelbase = number(lf + lr, "wheelbase");
+  const cgHeight = number(vehicle?.h_cg, "vehicle.h_cg", true);
+  // Version 2 heave rates used the sum of two wheel displacements. Version 3 exports the main spring rate.
+  const heaveScale = version === 2 ? 4 : 1;
+  const frontHeave = rate("heave_f", heaveScale);
+  const settings = {
+    load_model: "point_mass",
+    brake_model: "leverage",
+    tire_utilization: schema.defaults.tire_utilization,
+    mass,
+    wheelbase,
+    cg_from_front: lf,
+    cg_height: cgHeight,
+    front_track: number(vehicle?.tf, "vehicle.tf"),
+    rear_track: number(vehicle?.tr, "vehicle.tr"),
+    front_heave_stiffness: frontHeave,
+    // The export's roll rate acts across the full track. LapSim uses half the track in its roll equation.
+    front_roll_stiffness: rate("roll_f", 4),
+    rear_stiffness_ratio: number(rate("heave_r", heaveScale) / frontHeave, "rear-to-front stiffness ratio"),
+    tire_stiffness: rate("tire_f", 1) / 2 + rate("tire_r", 1) / 2,
+    front_brake_bias: number(vehicle?.brake_front, "vehicle.brake_front", true, 1),
+  };
+  if (version === 3 || source !== undefined) {
+    const p = source?.parameters;
+    settings.pedal_force = number(p?.brake_driver_force_N, "source_project.parameters.brake_driver_force_N");
+    const target = number(p?.brake_ax ?? p?.ax, "source_project brake deceleration target");
+    const gravity = number(vehicle?.gravity, "vehicle.gravity");
+    // Sizing defines mechanical advantage using the requested total braking force on level ground.
+    settings.brake_leverage = number(mass * gravity * target / settings.pedal_force, "mechanical advantage");
+
+    const accelerationG = number(p?.a_acc, "source_project.parameters.a_acc");
+    const radius = number(vehicle?.free_radius, "vehicle.free_radius");
+    const motorTorque = number(p?.drive_motor_torque_Nm, "source_project.parameters.drive_motor_torque_Nm");
+    const motorRpm = number(p?.drive_motor_rpm, "source_project.parameters.drive_motor_rpm");
+    const targetSpeed = number(p?.drive_target_speed_kmh, "source_project.parameters.drive_target_speed_kmh") / 3.6;
+    const rearLoadFraction = (lf + accelerationG * cgHeight) / wheelbase;
+    if (!(rearLoadFraction > 0 && rearLoadFraction < 1)) {
+      throw new Error("The target acceleration must keep both axles loaded to calculate the gear ratio.");
+    }
+    const maxWheelForce = mass * gravity * accelerationG * Math.max(rearLoadFraction, 1 - rearLoadFraction) / 2;
+    const accelerationRatio = maxWheelForce * radius / motorTorque;
+    const topSpeedRatio = motorRpm / (targetSpeed / (2 * Math.PI * radius) * 60);
+    settings.gear_ratio = number((accelerationRatio + topSpeedRatio) / 2, "fixed gear reduction ratio");
+  }
+  return settings;
+}
+
+byId("vehicle-import").addEventListener("click", () => vehicleSettingsFile.click());
+vehicleSettingsFile.addEventListener("change", async () => {
+  const file = vehicleSettingsFile.files[0];
+  vehicleSettingsFile.value = "";
+  if (!file || job || !schema) return;
+  setJob("import");
+  try {
+    const text = await file.text();
+    const settings = vehicleSettings(JSON.parse(text));
+    notesTopic.value = "load_model";
+    applySettings(settings);
+    for (const key of ["load_model", "brake_model"]) form.elements[key].closest("details").open = true;
+    if (Object.hasOwn(settings, "gear_ratio")) form.elements.gear_ratio.closest("details").open = true;
+    curves.invalidate();
+    const sourceMessage = Object.hasOwn(settings, "pedal_force") ? "" : " This export lacks pedal force and gear sizing inputs.";
+    const resultMessage = result ? " Run the calculation again to update the results." : "";
+    setStatus(`Imported ${file.name}.${sourceMessage}${resultMessage}`);
+  } catch (error) {
+    const message = error instanceof SyntaxError ? "The file does not contain valid JSON." : error.message;
+    setStatus(`Could not import vehicle settings. ${message}`, true);
+  } finally {
+    setJob();
+  }
+});
 
 function setJob(nextJob, tool) {
   job = nextJob;
@@ -310,6 +407,7 @@ download.addEventListener("click", () => {
   getWorker().postMessage({ type: "export" });
 });
 form.addEventListener("change", (event) => {
+  if (event.target === vehicleSettingsFile) return;
   const field = event.target.name;
   const topic = field === "aero_enabled" ? "aero_model" : field;
   if (Object.hasOwn(schema.models, topic)) notesTopic.value = topic;
