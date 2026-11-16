@@ -1,5 +1,5 @@
 import { bounds, drawLines, lineColors } from "./charts.js";
-import { defaultAngle, drawGgvSurface } from "./ggv-chart.js";
+import { defaultAngle, drawGgvSurface, lapPointColor } from "./ggv-chart.js";
 
 const titles = { motor: "Motor Curve", aero: "Aerodynamic Sweep", tire: "Tire Force Sweep" };
 const aeroViews = {
@@ -16,6 +16,7 @@ export function installCurveTools(request, cancel) {
   const form = byId("curve-form");
   const canvas = byId("curve-chart");
   const ggvCanvas = byId("ggv-chart");
+  const ggvTrackPoints = byId("ggv-track-points");
   const sample = byId("curve-sample");
   const tabs = [...document.querySelectorAll(".tool-tabs [data-tool]")];
   const results = new Map();
@@ -25,6 +26,7 @@ export function installCurveTools(request, cancel) {
   let opener;
   let busy = true;
   let drag;
+  let lapPoints = [];
 
   function status(tool, message, error = false) {
     const note = byId(tool === "ggv" ? "ggv-status" : "curve-status");
@@ -33,10 +35,11 @@ export function installCurveTools(request, cancel) {
   }
 
   function legend(id, entries) {
-    byId(id).replaceChildren(...entries.map(({ label, color }, index) => {
+    byId(id).replaceChildren(...entries.map(({ label, color, dot }, index) => {
       const item = document.createElement("span");
       const swatch = document.createElement("i");
       swatch.style.backgroundColor = color ?? lineColors[index % lineColors.length];
+      swatch.classList.toggle("dot", Boolean(dot));
       item.append(swatch, label);
       return item;
     }));
@@ -103,24 +106,35 @@ export function installCurveTools(request, cancel) {
     byId("ggv-speed-label").hidden = surface || !entry;
     if (!entry) return;
     const { result } = entry;
+    const stale = changed.has("ggv");
+    const speed = byId("ggv-speed").value;
+    let points = ggvTrackPoints.checked && !stale ? lapPoints : [];
+    if (!surface && speed !== "all") {
+      const index = Number(speed);
+      const center = result[index].speed;
+      const lower = index > 0 ? (center + result[index - 1].speed) / 2 : -Infinity;
+      const upper = index < result.length - 1 ? (center + result[index + 1].speed) / 2 : Infinity;
+      points = points.filter(([, , kmh]) => kmh >= lower && kmh < upper);
+    }
+    const pointLegend = points.length ? [{ label: "Track Operating Points", color: lapPointColor, dot: true }] : [];
     byId("ggv-rotation").hidden = !surface;
     ggvCanvas.classList.toggle("surface", surface);
     let message;
     if (surface) {
       ggvCanvas.setAttribute("aria-label", "GGV 3D surface, lateral acceleration ay, longitudinal acceleration ax, and vehicle speed");
-      drawGgvSurface(ggvCanvas, result, angle);
-      legend("ggv-legend", [{ label: "Drive", color: lineColors[0] }, { label: "Braking", color: lineColors[1] }]);
+      drawGgvSurface(ggvCanvas, result, angle, points);
+      legend("ggv-legend", [{ label: "Drive", color: lineColors[0] }, { label: "Braking", color: lineColors[1] }, ...pointLegend]);
       message = `${result.length} speed slices. Drag to rotate and double-click to reset the view.`;
     } else {
-      const speed = byId("ggv-speed").value;
       const slices = speed === "all" ? result.filter((_, index) => index % 3 === 0) : [result[Number(speed)]];
       const colors = slices.map(({ speed: kmh }, index) => ({ label: `${Number(kmh.toFixed(2))} km/h`, color: lineColors[index] }));
       const lines = slices.flatMap(({ ay, drive, brake }, index) => [
         { x: ay, values: drive, ...colors[index] }, { x: ay, values: brake, ...colors[index] },
       ]);
       ggvCanvas.setAttribute("aria-label", "GGV 2D slices, lateral acceleration ay and longitudinal acceleration ax");
-      drawLines(ggvCanvas, lines, "Lateral Acceleration ay (g)", "Longitudinal Acceleration ax (g)");
-      legend("ggv-legend", colors);
+      drawLines(ggvCanvas, lines, "Lateral Acceleration ay (g)", "Longitudinal Acceleration ax (g)", undefined,
+        { points, color: lapPointColor });
+      legend("ggv-legend", [...colors, ...pointLegend]);
       message = "Positive ax indicates acceleration and negative ax indicates braking. Positive ay indicates a left turn.";
       if (speed !== "all") {
         const { ay, drive, brake } = slices[0];
@@ -128,7 +142,23 @@ export function installCurveTools(request, cancel) {
           `Acceleration ${Math.max(...drive).toFixed(2)} g · Braking ${Math.abs(Math.min(...brake)).toFixed(2)} g`;
       }
     }
-    if (!busy) status("ggv", changed.has("ggv") ? `Settings changed. Update the plot to see the latest results. ${message}` : message);
+    if (stale) message = `Settings changed. Calculate GGV again to update the envelope. ${message}`;
+    if (!lapPoints.length) message += " Calculate a lap to show track operating points.";
+    else if (ggvTrackPoints.checked && !stale) {
+      const filter = surface || speed === "all" ? "" : " in this speed slice";
+      message += ` ${points.length.toLocaleString()} track samples${filter}.`;
+    }
+    if (!busy) status("ggv", message);
+  }
+
+  function setLapResult(result) {
+    lapPoints = [];
+    if (result) {
+      const { ay_g: lateral, ax_g: longitudinal, speed_kmh: speed } = result.signals;
+      lapPoints = speed.values.map((kmh, index) => [lateral.values[index], longitudinal.values[index], kmh]);
+    }
+    ggvTrackPoints.disabled = busy || !lapPoints.length;
+    drawGgv();
   }
 
   function start() {
@@ -180,6 +210,7 @@ export function installCurveTools(request, cancel) {
     byId(id).addEventListener("input", drawInspection);
   }
   for (const id of ["ggv-view", "ggv-speed"]) byId(id).addEventListener("input", drawGgv);
+  ggvTrackPoints.addEventListener("change", drawGgv);
   function rotate(dx, dy) {
     angle.azimuth += dx;
     angle.elevation = Math.max(-1.2, Math.min(1.2, angle.elevation + dy));
@@ -211,18 +242,19 @@ export function installCurveTools(request, cancel) {
   new ResizeObserver(drawGgv).observe(ggvCanvas);
 
   return {
-    select, status,
+    select, status, setLapResult,
     setBusy(value) {
       busy = value;
       for (const tab of tabs) tab.disabled = value;
       byId("curve-run").disabled = value;
       byId("ggv-run").disabled = value;
+      ggvTrackPoints.disabled = value || !lapPoints.length;
       for (const input of form.querySelectorAll("input, select")) input.disabled = value;
     },
     invalidate() {
       for (const tool of results.keys()) changed.add(tool);
       drawInspection();
-      drawGgv();
+      setLapResult();
     },
     receive(tool, result, fileName) {
       results.set(tool, { result, fileName });

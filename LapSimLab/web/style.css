@@ -153,6 +153,7 @@ small { display: block; }
 .curve-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-block: 10px; color: var(--muted); font-size: .8rem; }
 .curve-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .curve-legend i { width: 15px; height: 3px; border-radius: 3px; }
+.curve-legend i.dot { width: 7px; height: 7px; border-radius: 50%; }
 .curve-dialog {
   color: inherit;
   width: min(820px, calc(100% - 28px));

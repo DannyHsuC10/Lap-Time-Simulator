@@ -7,10 +7,21 @@ import numpy as np
 from .charts import GRID, PlotCanvas, speed_color
 
 
+LAP_POINT_COLOR = "#f054a5"
+
+
+def draw_operating_points(canvas, screen):
+    # Keep one marker per small screen cell so dense laps can still rotate smoothly.
+    _, indices = np.unique(np.floor(screen / 3), axis=0, return_index=True)
+    for x, y in screen[indices]:
+        canvas.create_oval(x - 2, y - 2, x + 2, y + 2, fill=LAP_POINT_COLOR, outline="")
+
+
 class GGVSurface(PlotCanvas):
     def __init__(self, master):
         super().__init__(master)
         self.slices = []
+        self.points = np.empty((0, 3))
         self.drag_start = None
         self.bind("<ButtonPress-1>", self.start_rotation)
         self.bind("<B1-Motion>", self.rotate)
@@ -40,9 +51,15 @@ class GGVSurface(PlotCanvas):
             self.label(w / 2, h / 2, "按「計算 GGV」查看車輛加速度上限", size=14, color="#e2e8f0")
             return
 
-        ay_extent = max(0.1, max(float(np.abs(part.ay_g).max()) for part in self.slices)) * 1.06
-        ax_extent = max(0.1, max(float(max(part.drive_g.max(), -part.brake_g.min())) for part in self.slices)) * 1.06
+        ay_extent = max(0.1, max(float(np.abs(part.ay_g).max()) for part in self.slices))
+        ax_extent = max(0.1, max(float(max(part.drive_g.max(), -part.brake_g.min())) for part in self.slices))
         vmax = self.slices[-1].speed_kmh
+        if self.points.size:
+            ay_extent = max(ay_extent, np.abs(self.points[:, 0]).max())
+            ax_extent = max(ax_extent, np.abs(self.points[:, 1]).max())
+            vmax = max(vmax, self.points[:, 2].max())
+        ay_extent *= 1.06
+        ax_extent *= 1.06
         azimuth, elevation = radians(self.azimuth), radians(self.elevation)
         ca, sa = cos(azimuth), sin(azimuth)
         ce, se = cos(elevation), sin(elevation)
@@ -79,6 +96,11 @@ class GGVSurface(PlotCanvas):
                     faces.append((depth[rows, columns].mean(), screen[rows, columns].ravel(), color, outline))
         for _, polygon, color, outline in sorted(faces, key=lambda face: face[0]):
             self.create_polygon(*polygon, fill=color, outline=outline, width=1, tags="ggv-face")
+
+        if self.points.size:
+            normalized = self.points / [ay_extent, ax_extent, vmax / 2] - [0, 0, 1]
+            screen, _ = project(normalized)
+            draw_operating_points(self, screen)
 
         # Place the axes on the edge nearest the viewer for the current angle.
         x_edge = 1 if sa >= 0 else -1

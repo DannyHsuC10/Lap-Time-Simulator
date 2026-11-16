@@ -57,12 +57,23 @@ function tick(value) {
 
 export const lineColors = ["#076d64", "#a65a2b", "#285f99", "#79438e", "#85630d"];
 
-function drawSeries(ctx, width, height, series, xUnit, yUnit, sample) {
-  const [low, high] = bounds(series.flatMap(({ values }) => values));
+export function drawPoints(ctx, points, color) {
+  ctx.beginPath();
+  for (const [x, y] of points) {
+    ctx.moveTo(x + 2, y);
+    ctx.arc(x, y, 2, 0, 2 * Math.PI);
+  }
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function drawSeries(ctx, width, height, series, xUnit, yUnit, sample, scatter) {
+  const points = scatter?.points ?? [];
+  const [low, high] = bounds([...series.flatMap(({ values }) => values), ...points.map((point) => point[1])]);
   const padding = (high - low || Math.abs(high) || 1) * 0.08;
   const min = low - padding;
   const max = high + padding;
-  const [xStart, xEnd] = bounds(series.flatMap(({ x }) => x));
+  const [xStart, xEnd] = bounds([...series.flatMap(({ x }) => x), ...points.map((point) => point[0])]);
   const left = 57;
   const bottom = height - 47;
   const top = 29;
@@ -104,6 +115,7 @@ function drawSeries(ctx, width, height, series, xUnit, yUnit, sample) {
     ctx.lineWidth = 2;
     ctx.stroke();
   }
+  if (points.length) drawPoints(ctx, points.map(([px, py]) => [x(px), y(py)]), scatter.color);
   if (sample !== undefined) {
     for (const { x: domain, values } of series) drawMarker(ctx, x(domain[sample]), y(values[sample]));
   }
@@ -120,8 +132,8 @@ export function paintCanvas(canvas, draw) {
   draw(ctx, width, height);
 }
 
-export function drawLines(canvas, series, xUnit, yUnit, sample) {
-  paintCanvas(canvas, (ctx, width, height) => drawSeries(ctx, width, height, series, xUnit, yUnit, sample));
+export function drawLines(canvas, series, xUnit, yUnit, sample, scatter) {
+  paintCanvas(canvas, (ctx, width, height) => drawSeries(ctx, width, height, series, xUnit, yUnit, sample, scatter));
 }
 
 export function drawChart(canvas, result, view, signal, sample) {

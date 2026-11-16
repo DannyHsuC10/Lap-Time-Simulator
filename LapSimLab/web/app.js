@@ -232,6 +232,7 @@ function setJob(nextJob, tool) {
 
 function clearResult() {
   result = undefined;
+  curves.setLapResult();
   byId("result").hidden = true;
   byId("empty").hidden = false;
   download.disabled = true;
@@ -252,6 +253,7 @@ function drawResult() {
 
 function showResult(data, trackName) {
   result = data;
+  curves.setLapResult(data);
   byId("result-track").textContent = trackName;
   byId("lap-time").value = data.lapTime.toFixed(3);
   byId("top-speed").value = data.topSpeed.toFixed(1);

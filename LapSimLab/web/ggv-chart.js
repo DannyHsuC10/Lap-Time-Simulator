@@ -1,12 +1,18 @@
-import { paintCanvas } from "./charts.js";
+import { drawPoints, paintCanvas } from "./charts.js";
 
 export const defaultAngle = { azimuth: -0.64, elevation: 0.46 };
+export const lapPointColor = "#d42a80";
 
-export function drawGgvSurface(canvas, slices, angle) {
+export function drawGgvSurface(canvas, slices, angle, points = []) {
   paintCanvas(canvas, (ctx, width, height) => {
-    const maxAy = Math.max(0.1, ...slices.flatMap(({ ay }) => ay.map(Math.abs)));
-    const maxAx = Math.max(0.1, ...slices.flatMap(({ drive, brake }) => [...drive, ...brake].map(Math.abs)));
-    const maxSpeed = slices.at(-1).speed;
+    let maxAy = Math.max(0.1, ...slices.flatMap(({ ay }) => ay.map(Math.abs)));
+    let maxAx = Math.max(0.1, ...slices.flatMap(({ drive, brake }) => [...drive, ...brake].map(Math.abs)));
+    let maxSpeed = slices.at(-1).speed;
+    for (const [ay, ax, speed] of points) {
+      maxAy = Math.max(maxAy, Math.abs(ay));
+      maxAx = Math.max(maxAx, Math.abs(ax));
+      maxSpeed = Math.max(maxSpeed, speed);
+    }
     const ca = Math.cos(angle.azimuth), sa = Math.sin(angle.azimuth);
     const ce = Math.cos(angle.elevation), se = Math.sin(angle.elevation);
     const scale = Math.min(width * 0.29, height * 0.30);
@@ -45,6 +51,8 @@ export function drawGgvSurface(canvas, slices, angle) {
       ctx.fill();
       ctx.stroke();
     }
+
+    if (points.length) drawPoints(ctx, points.map(([ay, ax, speed]) => project(ay, ax, speed)), lapPointColor);
 
     const origin = project(-maxAy, -maxAx, 0);
     const axes = [

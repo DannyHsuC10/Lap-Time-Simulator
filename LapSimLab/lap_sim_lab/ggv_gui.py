@@ -9,13 +9,15 @@ import numpy as np
 
 from .charts import GRID, PlotCanvas, speed_color
 from .ggv import build_ggv
-from .ggv_surface import GGVSurface
+from .ggv_surface import GGVSurface, draw_operating_points
+from .planner import GRAVITY
 
 
 class GGVChart(PlotCanvas):
     def __init__(self, master):
         super().__init__(master)
         self.slices = []
+        self.points = np.empty((0, 3))
         self.selection = 0
 
     def draw_content(self, w, h):
@@ -24,9 +26,16 @@ class GGVChart(PlotCanvas):
             return
 
         left, right, top, bottom = 64, w - 24, 54, h - 53
-        ay_limit = max(0.1, max(float(np.max(np.abs(part.ay_g))) for part in self.slices)) * 1.08
-        ax_min = min(-0.1, min(float(part.brake_g.min()) for part in self.slices)) * 1.08
-        ax_max = max(0.1, max(float(part.drive_g.max()) for part in self.slices)) * 1.08
+        ay_limit = max(0.1, max(float(np.max(np.abs(part.ay_g))) for part in self.slices))
+        ax_min = min(-0.1, min(float(part.brake_g.min()) for part in self.slices))
+        ax_max = max(0.1, max(float(part.drive_g.max()) for part in self.slices))
+        if self.points.size:
+            ay_limit = max(ay_limit, np.abs(self.points[:, 0]).max())
+            ax_min = min(ax_min, self.points[:, 1].min())
+            ax_max = max(ax_max, self.points[:, 1].max())
+        ay_limit *= 1.08
+        ax_min *= 1.08
+        ax_max *= 1.08
         self.label(18, 18, "縱向加速度 ax [g]", anchor="w", bold=True, color="#e2e8f0")
         self.label((left + right) / 2, h - 12, "橫向加速度 ay [g]   右彎 ←  → 左彎")
         for index in range(7):
@@ -56,6 +65,10 @@ class GGVChart(PlotCanvas):
             for branch in (part.drive_g, part.brake_g):
                 ys = bottom - (branch - ax_min) / (ax_max - ax_min) * (bottom - top)
                 self.create_line(*np.column_stack((xs, ys)).ravel().tolist(), fill=color, width=2)
+        if self.points.size:
+            xs = left + (self.points[:, 0] + ay_limit) / (2 * ay_limit) * (right - left)
+            ys = bottom - (self.points[:, 1] - ax_min) / (ax_max - ax_min) * (bottom - top)
+            draw_operating_points(self, np.column_stack((xs, ys)))
         self.label(right, 18, "色標 [km/h]", anchor="e")
 
 
@@ -65,6 +78,7 @@ class GGVPage(ttk.Frame):
         self.read_settings = read_settings
         self.revision = 0
         self.results = SimpleQueue()
+        self.lap_points = np.empty((0, 3))
         self.note = tk.StringVar(value="可用目前車輛設定計算，無需先跑圈速。")
         controls = ttk.Frame(self)
         controls.pack(fill="x", pady=(0, 5))
@@ -77,6 +91,11 @@ class GGVPage(ttk.Frame):
         self.speeds = ttk.Combobox(controls, width=15, values=("代表車速疊圖",), state="disabled")
         self.speeds.current(0)
         self.speeds.bind("<<ComboboxSelected>>", self.select_speed)
+        self.show_track_points = tk.BooleanVar(value=True)
+        self.track_points_toggle = ttk.Checkbutton(
+            self, text="顯示賽道工作點", variable=self.show_track_points, command=self.select_speed, state="disabled",
+        )
+        self.track_points_toggle.pack(anchor="w", pady=(0, 5))
         plot = ttk.Frame(self)
         plot.pack(fill="both", expand=True)
         plot.columnconfigure(0, weight=1)
@@ -104,6 +123,16 @@ class GGVPage(ttk.Frame):
             self.instructions.set("正 ax 為加速，負 ax 為煞車。ay 正值為左彎。")
         if self.chart.slices:
             self.select_speed()
+
+    def set_lap_result(self, result):
+        if result is None:
+            self.lap_points = np.empty((0, 3))
+        else:
+            self.lap_points = np.column_stack((
+                result.lateral_acceleration / GRAVITY, result.plan.acceleration / GRAVITY, result.plan.speed * 3.6,
+            ))
+        self.track_points_toggle.state(["!disabled"] if self.lap_points.size else ["disabled"])
+        self.select_speed()
 
     def invalidate(self):
         self.revision += 1
@@ -160,18 +189,32 @@ class GGVPage(ttk.Frame):
         self.select_speed()
 
     def select_speed(self, _event=None):
+        if not self.chart.slices:
+            return
+        points = self.lap_points if self.show_track_points.get() else self.lap_points[:0]
+        notice = "先計算圈速即可顯示賽道工作點。" if not self.lap_points.size else ""
         if self.view.current() == 0:
+            self.surface.points = points
             self.surface.draw()
-            self.note.set(f"由 {len(self.surface.slices)} 個車速切片連成曲面，可切換到 2D 查看峰值。")
+            if points.size:
+                notice = f"粉紅點為 {len(points):,} 個賽道取樣點。"
+            self.note.set(f"由 {len(self.surface.slices)} 個車速切片連成曲面。{notice}")
             return
         index = self.speeds.current()
         self.chart.selection = index
+        if index > 0:
+            speeds = np.array([part.speed_kmh for part in self.chart.slices])
+            midpoints = (speeds[1:] + speeds[:-1]) / 2
+            points = points[np.searchsorted(midpoints, points[:, 2], side="right") == index - 1]
+        self.chart.points = points
         self.chart.draw()
+        if self.lap_points.size and self.show_track_points.get():
+            notice = f"此切片有 {len(points):,} 個賽道取樣點。" if index > 0 else f"粉紅點為 {len(points):,} 個賽道取樣點。"
         if index <= 0:
-            self.note.set("疊圖顯示五個代表車速，選擇單一車速可查看峰值。")
+            self.note.set(f"疊圖顯示五個代表車速。{notice}")
             return
         part = self.chart.slices[index - 1]
         self.note.set(
             f"左彎 {part.ay_g[-1]:.2f} g　右彎 {-part.ay_g[0]:.2f} g　"
-            f"加速 {part.drive_g.max():.2f} g　煞車 {-part.brake_g.min():.2f} g"
+            f"加速 {part.drive_g.max():.2f} g　煞車 {-part.brake_g.min():.2f} g\n{notice}".rstrip()
         )

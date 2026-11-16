@@ -539,6 +539,7 @@ class LapSimLab(tk.Tk):
         for page in self.analysis_pages.values():
             page.invalidate()
         self.ggv_page.invalidate()
+        self.ggv_page.set_lap_result(None)
         self.optimization_page.invalidate()
         self.optimization_page.refresh_sources(self.selected_models(), self.paths["track_path"].name)
         self.signal_page.mark_stale()
@@ -930,6 +931,7 @@ class LapSimLab(tk.Tk):
         self.result_revision = revision
         updated = self.revision == revision
         self.signal_page.set_result(result, stale=not updated)
+        self.ggv_page.set_lap_result(result if updated else None)
         if updated:
             self.result_pages.select(self.signal_page)
         text = f"{track_name}  ·  {len(result.time):,} 個取樣點"
