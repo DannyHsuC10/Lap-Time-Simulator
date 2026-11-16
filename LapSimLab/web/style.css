@@ -49,6 +49,19 @@ small { display: block; }
 .file-input small { margin-top: 5px; }
 .actions, .result-heading { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .result-heading { justify-content: space-between; }
+.tool-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.tool-tabs button { color: var(--muted); background: transparent; }
+.tool-tabs button[aria-pressed="true"] { color: var(--accent); background: #1c3542; border-color: #41616c; }
+.curve-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 132px), 1fr)); gap: 10px; margin-block: 10px; }
+.curve-controls label { display: flex; flex-direction: column; gap: 5px; }
+.curve-note { margin-block: 10px; color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
+.curve-note:empty { display: none; }
+.curve-note.error { color: #ffbf87; }
+.curve-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-block: 10px; color: var(--muted); font-size: .8rem; }
+.curve-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.curve-legend i { width: 15px; height: 3px; border-radius: 3px; }
+#curve-chart.surface { cursor: grab; touch-action: none; }
+#curve-chart.surface:active { cursor: grabbing; }
 button { padding: 8px 13px; border: 1px solid transparent; border-radius: 7px; font-size: .88rem; font-weight: 650; color: #0d2425; background: var(--accent); cursor: pointer; }
 button.secondary { color: inherit; background: #1c2a38; border-color: var(--border); }
 button:disabled { opacity: .48; cursor: default; }

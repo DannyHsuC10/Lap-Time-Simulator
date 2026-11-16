@@ -21,7 +21,7 @@ async function initialize() {
   pyodide.runPython(`
 import sys
 sys.path.insert(0, "/lapsim")
-from bridge import export_csv, read_settings, run_lap
+from bridge import export_csv, inspect_curve, read_settings, run_lap
 
 last_lap = None
 
@@ -77,16 +77,25 @@ self.onmessage = async ({ data }) => {
       return;
     }
 
-    const simulate = pyodide.globals.get("simulate_browser");
+    const solve = pyodide.globals.get(data.type === "inspect" ? "inspect_curve" : "simulate_browser");
     const uploads = [];
     try {
       report("載入模型資料…");
       const paths = await prepareInputs(pyodide.FS, data.files, uploads);
-      const result = JSON.parse(simulate(JSON.stringify(data.values), JSON.stringify(paths), report));
+      const valuesJson = JSON.stringify(data.values);
+      const filesJson = JSON.stringify(paths);
+      if (data.type === "inspect") {
+        report(data.tool === "ggv" ? "計算 GGV 車速切片…" : "計算曲線…");
+        const result = JSON.parse(solve(data.tool, valuesJson, filesJson, JSON.stringify(data.conditions)));
+        const file = Object.values(data.files)[0];
+        self.postMessage({ type: "inspection", tool: data.tool, result, fileName: file?.name ?? file });
+        return;
+      }
+      const result = JSON.parse(solve(valuesJson, filesJson, report));
       const track = data.files.track_path;
       self.postMessage({ type: "result", result, trackName: typeof track === "string" ? track : track.name });
     } finally {
-      simulate.destroy();
+      solve.destroy();
       for (const path of uploads) pyodide.FS.unlink(path);
     }
   } catch (error) {

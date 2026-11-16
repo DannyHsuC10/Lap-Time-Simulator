@@ -23,7 +23,7 @@ from lap_sim_lab.settings import MODEL_CHOICES, PERCENTAGE_FIELDS, Settings
 
 
 MODULES = (
-    "__init__", "aero", "brake", "car", "motor", "planner", "settings",
+    "__init__", "aero", "analysis", "brake", "car", "ggv", "motor", "planner", "settings",
     "signals", "simulation", "suspension", "tire", "track",
 )
 PYODIDE_VERSION = "314.0.8"
@@ -76,7 +76,7 @@ def build(destination):
     quadratic_example = defaults.aero_path.with_name("quadratic_aero.json")
 
     destination.mkdir(parents=True, exist_ok=True)
-    for name in ("index.html", "style.css", "app.js", "worker.js", "charts.js"):
+    for name in ("index.html", "style.css", "app.js", "worker.js", "charts.js", "curves.js", "ggv-chart.js"):
         shutil.copyfile(WEB / name, destination / name)
     schema = {
         "defaults": values,

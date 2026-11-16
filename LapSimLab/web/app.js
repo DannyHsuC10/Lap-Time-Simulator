@@ -1,4 +1,5 @@
 import { bounds, drawChart } from "./charts.js";
+import { installCurveTools } from "./curves.js";
 
 const byId = (id) => document.getElementById(id);
 const form = byId("settings");
@@ -18,13 +19,25 @@ const conditionalFields = Array.from(fields.querySelectorAll("[data-show]"), (ro
   conditions: row.dataset.show.split(" ").map((term) => term.split("=")),
 }));
 const fileRows = new Map();
+const inspectionInputs = {
+  motor: new Set(["motor_model", "dc_voltage", "motor_path", "lp03_path"]),
+  aero: new Set(["aero_model", "aero_enabled", "aero_path", "wheelbase", "front_track", "rear_track"]),
+  tire: new Set(["tire_model", "load_model", "tire_path", "ellipse_path", "tire_table_path", "tire_utilization",
+    "tire_radius", "tire_stiffness", "rolling_coefficient", "mass", "wheelbase", "front_track", "rear_track",
+    "cg_from_front", "cg_height", "front_heave_stiffness", "front_roll_stiffness", "rear_stiffness_ratio"]),
+};
+const trackOnlyInputs = new Set(["track_path", "track_width", "step_m", "curvature_model", "curvature_sigma_m",
+  "solver", "passes", "initial_speed", "braking_lookahead"]);
 let schema;
 let worker;
+let inspectionWorker;
 let result;
+let job;
 
 function setStatus(message, error = false) {
   status.textContent = message;
   status.classList.toggle("error", error);
+  if (job === "inspect") curves.status(message, error);
 }
 
 function updateInputs() {
@@ -84,12 +97,16 @@ function restoreDefaults() {
   updateInputs();
 }
 
-function setBusy(busy) {
+function setJob(nextJob) {
+  job = nextJob;
+  const busy = Boolean(job);
   fields.disabled = busy;
   run.disabled = busy;
   reset.disabled = busy;
-  cancel.hidden = !busy;
+  cancel.hidden = job !== "run" && job !== "inspect";
+  byId("curve-cancel").hidden = job !== "inspect";
   download.disabled = busy || !result;
+  curves.setBusy(busy);
 }
 
 function clearResult() {
@@ -144,10 +161,13 @@ function downloadCsv(contents) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function getWorker() {
-  if (worker) return worker;
-  worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
-  worker.onmessage = ({ data }) => {
+function getWorker(inspect = false) {
+  const existing = inspect ? inspectionWorker : worker;
+  if (existing) return existing;
+  const created = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+  if (inspect) inspectionWorker = created;
+  else worker = created;
+  created.onmessage = ({ data }) => {
     switch (data.type) {
       case "progress":
         setStatus(data.message);
@@ -155,34 +175,43 @@ function getWorker() {
       case "result":
         showResult(data.result, data.trackName);
         setStatus("圈速計算完成。");
-        setBusy(false);
+        setJob();
+        break;
+      case "inspection":
+        setJob();
+        curves.receive(data.tool, data.result, data.fileName);
+        setStatus(data.tool === "ggv" ? "GGV 計算完成。" : "曲線已更新。");
         break;
       case "csv":
         downloadCsv(data.contents);
-        setBusy(false);
+        setJob();
         setStatus("CSV 已產生。");
         break;
       case "error":
-        setBusy(false);
         setStatus(data.message, true);
+        setJob();
         break;
     }
   };
-  worker.onerror = () => {
-    worker.terminate();
-    worker = undefined;
-    clearResult();
-    setBusy(false);
-    setStatus("無法啟動圈速求解器，請重試。", true);
+  created.onerror = () => {
+    created.terminate();
+    if (inspect) inspectionWorker = undefined;
+    else {
+      worker = undefined;
+      clearResult();
+    }
+    setStatus("求解器中斷，請重試。", true);
+    setJob();
   };
-  return worker;
+  return created;
 }
 
-form.addEventListener("submit", (event) => {
-  event.preventDefault();
-  if (run.disabled) return;
+function readInputs(tool) {
+  const included = inspectionInputs[tool];
+  const use = (key) => included ? included.has(key) : tool !== "ggv" || !trackOnlyInputs.has(key);
   const values = {};
   for (const [key, defaultValue] of Object.entries(schema.defaults)) {
+    if (!use(key)) continue;
     const field = form.elements[key];
     if (field.disabled) values[key] = defaultValue;
     else if (field.type === "checkbox") values[key] = field.checked;
@@ -197,35 +226,61 @@ form.addEventListener("submit", (event) => {
   }
   const files = {};
   for (const [key, { input }] of fileRows) {
-    if (!input.disabled) files[key] = input.files[0] ?? schema.files[key];
+    if (use(key) && !input.disabled) files[key] = input.files[0] ?? schema.files[key];
   }
-  clearResult();
-  setBusy(true);
+  return { values, files };
+}
+
+function startInspection(tool, conditions) {
+  if (job || !schema) return;
+  const inputs = readInputs(tool);
+  if (!inputs) return;
+  setJob("inspect");
   setStatus("準備計算…");
-  getWorker().postMessage({ type: "run", values, files });
+  getWorker(true).postMessage({ type: "inspect", tool, conditions, ...inputs });
+}
+
+const curves = installCurveTools(startInspection);
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (run.disabled) return;
+  const inputs = readInputs();
+  if (!inputs) return;
+  curves.select("lap");
+  clearResult();
+  setJob("run");
+  setStatus("準備計算…");
+  getWorker().postMessage({ type: "run", ...inputs });
 });
 
 form.addEventListener("reset", (event) => {
   event.preventDefault();
   restoreDefaults();
+  curves.invalidate();
   clearResult();
   setStatus("已恢復預設設定。");
 });
-cancel.addEventListener("click", () => {
-  worker.terminate();
-  worker = undefined;
-  setBusy(false);
-  setStatus("已取消圈速計算。");
-});
+function cancelJob() {
+  if (job === "inspect") {
+    inspectionWorker.terminate();
+    inspectionWorker = undefined;
+  } else {
+    worker.terminate();
+    worker = undefined;
+  }
+  setStatus("已取消計算。");
+  setJob();
+}
+cancel.addEventListener("click", cancelJob);
+byId("curve-cancel").addEventListener("click", cancelJob);
 download.addEventListener("click", () => {
-  run.disabled = true;
-  reset.disabled = true;
-  download.disabled = true;
+  setJob("export");
   setStatus("正在產生 CSV…");
   getWorker().postMessage({ type: "export" });
 });
 form.addEventListener("change", () => {
   updateInputs();
+  curves.invalidate();
   if (result && !run.disabled) setStatus("設定已變更，請重新計算以更新結果。");
 });
 for (const input of [signal, view, sample]) input.addEventListener("input", drawResult);
@@ -240,7 +295,7 @@ async function initialize() {
   }
   setupFileRows();
   restoreDefaults();
-  setBusy(false);
+  setJob();
   setStatus("可以開始計算圈速。");
 }
 
