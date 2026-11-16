@@ -12,6 +12,21 @@ import numpy as np
 from .settings import Settings
 
 
+def read_tire_json(path: str | Path) -> dict:
+    path = Path(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        if not isinstance(data, dict):
+            raise ValueError("JSON 須包含一個係數物件。")
+    except (OSError, ValueError) as error:
+        raise ValueError(f"無法讀取輪胎 JSON {path.name}。{error}") from error
+    return data
+
+
+def has_fixed_ellipse_coefficients(data: dict) -> bool:
+    return "mu_x" in data or "mu_y" in data
+
+
 class TireEnvelope(Protocol):
     fz_range: tuple[float, float]
     camber_range: tuple[float, float]
@@ -41,12 +56,12 @@ class SimplifiedTireModel:
     """Load coefficients once and query signed force limits in N and degrees."""
 
     def __init__(self, json_path: str | Path, *, exponent: float | None = None,
-                 fx_scale: float = 1.0, fy_scale: float = 1.0):
+                 utilization: float = 1.0, data: dict | None = None):
         path = Path(json_path)
-        self.fx_scale = fx_scale
-        self.fy_scale = fy_scale
+        self.utilization = utilization
+        if data is None:
+            data = read_tire_json(path)
         try:
-            data = json.loads(path.read_text(encoding="utf-8-sig"))
             if data["schema_version"] != 1:
                 raise ValueError("unsupported schema version")
             self.fz0 = float(data["fz0_n"])
@@ -81,11 +96,11 @@ class SimplifiedTireModel:
             raise ValueError(f"Camber must be within {self.camber_range} deg")
         load_offset = (fz - self.fz0) / self.fz0
         camber_sq = camber_deg * camber_deg
-        fx = self.fx_scale * self._fx.peak_force(fz, load_offset, camber_sq)
-        fy = self.fy_scale * self._fy.peak_force(fz, load_offset, camber_sq)
+        fx = self._fx.peak_force(fz, load_offset, camber_sq)
+        fy = self._fy.peak_force(fz, load_offset, camber_sq)
         if not (fx > 0 and fy > 0 and math.isfinite(fx) and math.isfinite(fy)):
             raise ValueError("Fitted force limits must be finite and positive")
-        return fx, fy
+        return self.utilization * fx, self.utilization * fy
 
     def fx_limits(self, fy: float, *, fz: float, camber_deg: float = 0.0) -> tuple[float, ...]:
         """Return the signed Fx limits from braking to driving for a given Fy."""
@@ -114,11 +129,23 @@ class SimplifiedTireModel:
 class FrictionEllipse:
     mu_x: float
     mu_y: float
+    utilization: float = 1.0
     fz_range = (0.0, math.inf)
     camber_range = (-math.inf, math.inf)
 
+    @classmethod
+    def from_coefficients(cls, data: dict, *, utilization: float = 1.0):
+        try:
+            mu_x, mu_y = (data.get(name) for name in ("mu_x", "mu_y"))
+            if all(type(value) in (int, float) and math.isfinite(value) and value > 0
+                   for value in (mu_x, mu_y)):
+                return cls(mu_x, mu_y, utilization=utilization)
+        except OverflowError:
+            pass
+        raise ValueError("摩擦橢圓 JSON 的 mu_x 與 mu_y 均須為有限的正數。")
+
     def peak_forces(self, fz: float, camber_deg: float = 0.0) -> tuple[float, float]:
-        return self.mu_x * fz, self.mu_y * fz
+        return self.utilization * (self.mu_x * fz), self.utilization * (self.mu_y * fz)
 
     def fx_limits(self, fy: float, *, fz: float, camber_deg: float = 0.0) -> tuple[float, ...]:
         fx_max, fy_max = self.peak_forces(fz)
@@ -135,7 +162,8 @@ class TabulatedTire:
     diagnostic_names = ("slip_angle", "slip_ratio", "overturning_moment", "aligning_moment",
                         "rolling_torque", "fx_fit_error", "fy_fit_error")
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, utilization: float = 1.0):
+        self.utilization = utilization
         try:
             with np.load(path, allow_pickle=False) as data:
                 self.fz, self.fy_fraction, self.fy_min, self.fy_max, self.fy_pure, self.brake, self.drive, self.rrt = (
@@ -180,18 +208,20 @@ class TabulatedTire:
 
     def peak_forces(self, fz: float, camber_deg: float = 0.0) -> tuple[float, float]:
         brake, drive = self.fx_limits(0.0, fz=fz)
-        return max(-brake, drive), float(np.interp(fz, self.fz, self.fy_pure))
+        return max(-brake, drive), self.utilization * float(np.interp(fz, self.fz, self.fy_pure))
 
     def fx_limits(self, fy: float, *, fz: float, camber_deg: float = 0.0) -> tuple[float, ...]:
-        lower = float(np.interp(fz, self.fz, self.fy_min))
-        upper = float(np.interp(fz, self.fz, self.fy_max))
+        lower = self.utilization * float(np.interp(fz, self.fz, self.fy_min))
+        upper = self.utilization * float(np.interp(fz, self.fz, self.fy_max))
         if not lower <= fy <= upper:
             return ()
+        if lower == upper:
+            return (0.0, 0.0)
         fraction = (fy - lower) / (upper - lower)
-        hi = int(np.clip(np.searchsorted(self.fz, fz), 1, len(self.fz) - 1))
+        hi = min(max(int(np.searchsorted(self.fz, fz)), 1), len(self.fz) - 1)
         lo = hi - 1
-        weight = float(np.clip((fz - self.fz[lo]) / (self.fz[hi] - self.fz[lo]), 0, 1))
-        return tuple(float(
+        weight = min(max(float((fz - self.fz[lo]) / (self.fz[hi] - self.fz[lo])), 0.0), 1.0)
+        return tuple(self.utilization * float(
             (1 - weight) * np.interp(fraction, self.fy_fraction, table[lo])
             + weight * np.interp(fraction, self.fy_fraction, table[hi])
         ) for table in (self.brake, self.drive))
@@ -223,8 +253,8 @@ class TabulatedTire:
             side = 1 - 2 * (indices % 2)
             target_fx = fx.ravel()[indices]
             target_fy = fy.ravel()[indices] * side
-            surface_fx = fx_grid[lo] * (1 - weight[:, None]) + fx_grid[hi] * weight[:, None]
-            surface_fy = fy_grid[lo] * (1 - weight[:, None]) + fy_grid[hi] * weight[:, None]
+            surface_fx = self.utilization * (fx_grid[lo] * (1 - weight[:, None]) + fx_grid[hi] * weight[:, None])
+            surface_fy = self.utilization * (fy_grid[lo] * (1 - weight[:, None]) + fy_grid[hi] * weight[:, None])
             error = ((surface_fx - target_fx[:, None]) / np.maximum(np.ptp(surface_fx, axis=1)[:, None], 1))**2
             error += ((surface_fy - target_fy[:, None]) / np.maximum(np.ptp(surface_fy, axis=1)[:, None], 1))**2
             best = np.argmin(error, axis=1)
@@ -239,11 +269,12 @@ class TabulatedTire:
 
 
 def build_tire_model(settings: Settings) -> TireEnvelope:
+    utilization = settings.tire_utilization
     if settings.tire_model == "table":
-        return TabulatedTire(settings.tire_table_path)
-    if settings.tire_model == "ellipse" and settings.ellipse_source == "fixed":
-        return FrictionEllipse(settings.ellipse_mu_x, settings.ellipse_mu_y)
-    exponent = 2.0 if settings.tire_model == "ellipse" else None
-    return SimplifiedTireModel(
-        settings.tire_path, exponent=exponent, fx_scale=settings.tire_fx_scale, fy_scale=settings.tire_fy_scale,
-    )
+        return TabulatedTire(settings.tire_table_path, utilization=utilization)
+    if settings.tire_model == "ellipse":
+        data = read_tire_json(settings.ellipse_path)
+        if has_fixed_ellipse_coefficients(data):
+            return FrictionEllipse.from_coefficients(data, utilization=utilization)
+        return SimplifiedTireModel(settings.ellipse_path, exponent=2.0, utilization=utilization, data=data)
+    return SimplifiedTireModel(settings.tire_path, utilization=utilization)

@@ -153,13 +153,14 @@ def build_signals(track, plan, time, limits, power, *, check_deadline=None):
         ("motor_speed", "馬達轉速估算", "RPM", "rpm", wheel_omega * car.train_rate * 60 / (2 * np.pi)),
         ("drive_torque", "輪端驅動扭矩估算", "N·m", "Nm", drive_torque),
         ("brake_torque", "輪端煞車扭矩估算", "N·m", "Nm", brake_torque),
-        ("motor_torque", "馬達扭矩估算", "N·m", "Nm", drive_torque / (car.train_rate * car.gear_eta)),
+        ("motor_torque", "馬達扭矩估算", "N·m", "Nm",
+         drive_torque / (car.train_rate * car.gear_eta) if car.gear_eta else np.zeros_like(drive_torque)),
         ("rolling_resistance", "滾動阻力", "N", "N", plan.rolling_resistance),
     ):
         if point_mass:
             values = np.zeros_like(values)
         add_wheels(key, label, unit, suffix, values)
-    if isinstance(limits.tire_model, TabulatedTire):
+    if not point_mass and isinstance(limits.tire_model, TabulatedTire):
         diagnostics = limits.tire_model.estimate_slip(loads, fx, fy, check_deadline=check_deadline)
     else:
         diagnostics = np.zeros((len(TabulatedTire.diagnostic_names), *loads.shape))

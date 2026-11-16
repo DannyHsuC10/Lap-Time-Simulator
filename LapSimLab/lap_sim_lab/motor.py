@@ -32,7 +32,8 @@ class MotorCurve:
 class VoltageMotorCurve:
     """Interpolate a fixed-voltage torque curve from the LP03 EV model's envelope."""
 
-    def __init__(self, path, voltage):
+    @staticmethod
+    def read_points(path):
         with path.open(encoding="utf-8-sig", newline="") as stream:
             reader = csv.DictReader(stream)
             keys = ("vdc_V", "rpm", "T_shaft_Nm")
@@ -44,6 +45,10 @@ class VoltageMotorCurve:
                 raise ValueError(f"{path.name} 含有無效的電壓或扭矩資料。") from error
         if len(points) < 2 or not np.isfinite(points).all() or np.any(points[:, :2] < 0):
             raise ValueError(f"{path.name} 的電壓與轉速資料無效。")
+        return points
+
+    def __init__(self, path, voltage):
+        points = self.read_points(path)
         voltages = np.unique(points[:, 0])
         if not voltages[0] <= voltage <= voltages[-1]:
             raise ValueError(f"直流電壓須介於 {voltages[0]:g} 與 {voltages[-1]:g} V。")

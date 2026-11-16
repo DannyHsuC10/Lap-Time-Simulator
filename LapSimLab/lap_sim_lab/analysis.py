@@ -73,8 +73,8 @@ def sweep_tires(settings: Settings, sweep: AttitudeSweep) -> TireSweepResult:
     weight = car.m * GRAVITY
     total_fy = weight * sweep.ay_g
     if point_mass:
-        fy_max = limits.tire_model.peak_forces(weight)[1]
-        fx = limits.tire_model.fx_limits(total_fy, fz=weight)
+        fy_max = limits.available_lateral_force(limits.wheel_load_state(0.0, 0.0, 0.0))
+        fx = limits.point_mass_fx_limits(weight, total_fy)
         shape = (len(angles), 1)
         return TireSweepResult(
             angles, np.full(shape, fy_max), np.full(shape, max(fx, default=0.0)),

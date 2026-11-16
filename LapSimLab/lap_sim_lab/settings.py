@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 INPUT_DIR = Path(__file__).resolve().parents[1] / "input_data"
+DEFAULT_ELLIPSE_PATH = INPUT_DIR / "friction_ellipse.json"
 
 # Display order follows the detail in each model. Settings below define defaults separately.
 # For the solver and track, prefer whole-lap planning and fidelity to the input geometry.
@@ -13,7 +14,6 @@ MODEL_CHOICES = {
         "table": "Pacejka 資料插值", "superellipse": "超橢圓",
         "ellipse": "摩擦橢圓",
     }),
-    "ellipse_source": ("橢圓峰值來源", {"fit": "輪胎 JSON", "fixed": "固定縱／橫向摩擦係數"}),
     "load_model": ("輪載與姿態", {
         "compliant": "剛性轉移＋輪胎壓縮",
         "point_mass": "質點（全車抓地）",
@@ -82,11 +82,8 @@ class Settings:
     rear_pistons: int = 2
     disc_diameter: float = 0.17
     pad_mu: float = 0.55
-    ellipse_source: str = "fixed"
-    ellipse_mu_x: float = 1.77
-    ellipse_mu_y: float = 1.77
-    tire_fx_scale: float = 1.0
-    tire_fy_scale: float = 1.0
+    ellipse_path: Path = DEFAULT_ELLIPSE_PATH
+    tire_utilization: float = 1.0
     aero_cl0: float | None = None
     aero_cd0: float | None = None
     time_limit_s: float = 120.0
@@ -107,8 +104,6 @@ class Settings:
         for key, (label, choices) in MODEL_CHOICES.items():
             if getattr(self, key) not in choices:
                 raise ValueError(f"無法辨識「{label}」的選項。")
-        if self.load_model == "point_mass" and (self.tire_model != "ellipse" or self.ellipse_source != "fixed"):
-            raise ValueError("質點輪載請搭配摩擦橢圓，並將橢圓峰值來源設為固定縱／橫向摩擦係數。")
         if self.load_model == "point_mass" and self.yaw_correction:
             raise ValueError("偏航慣量修正需要逐輪輪載。")
         if self.uses_aero_overrides:
@@ -124,16 +119,17 @@ class Settings:
             ("pedal_force", "踏板力"),
             ("initial_speed", "起始車速"),
             ("rolling_coefficient", "滾阻係數"),
+            ("tire_utilization", "輪胎使用率"),
             ("time_limit_s", "計算時間上限"),
         ):
             if not math.isfinite(value := getattr(self, name)) or value < 0:
                 raise ValueError(f"{label}須為有限的非負數。")
         if self.load_model != "point_mass" and not 0 < self.cg_from_front < self.wheelbase:
             raise ValueError("重心距前軸須大於零且小於軸距。")
-        for name, label in (("safety_factor", "側向安全係數"), ("gear_efficiency", "傳動效率")):
-            if not 0 < getattr(self, name) <= 1:
-                raise ValueError(f"{label}須大於零且不超過 1。")
+        if not 0 < self.safety_factor <= 1:
+            raise ValueError("側向安全係數須大於零且不超過 1。")
         for name, label in (
+            ("gear_efficiency", "傳動效率"),
             ("front_torque_scale", "前輪限扭比例"),
             ("rear_torque_scale", "後輪限扭比例"),
             ("front_brake_bias", "前軸煞車比例"),
@@ -174,8 +170,4 @@ POSITIVE_FIELDS = (
     ("disc_diameter", "碟盤直徑"),
     ("pad_mu", "來令片摩擦係數"),
     ("dc_voltage", "直流匯流排電壓"),
-    ("ellipse_mu_x", "縱向摩擦係數 μx"),
-    ("ellipse_mu_y", "側向摩擦係數 μy"),
-    ("tire_fx_scale", "縱向峰值倍率"),
-    ("tire_fy_scale", "側向峰值倍率"),
 )

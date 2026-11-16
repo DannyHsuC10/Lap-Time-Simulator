@@ -33,12 +33,18 @@ class Result:
         return float(self.time[-1])
 
 
-def simulate(settings: Settings, progress=None) -> Result:
+class InfeasibleLapError(ValueError):
+    """The input was valid, but the speed plan could not cover the track."""
+
+
+def simulate(settings: Settings, progress=None, *, include_signals=True, check_cancelled=None) -> Result:
     settings.validate()
     limit = settings.time_limit_s
     deadline = monotonic() + limit if limit else None
 
     def check_deadline():
+        if check_cancelled is not None:
+            check_cancelled()
         if deadline is not None and monotonic() >= deadline:
             raise TimeoutError(f"已達 {limit:g} 秒計算上限。")
 
@@ -82,12 +88,14 @@ def simulate(settings: Settings, progress=None) -> Result:
         raise ValueError("模擬結果含有非有限值，請確認輸入參數及模型資料。")
     stopped = (plan.speed[:-1] + plan.speed[1:]) <= 2e-9
     if np.any(stopped & (np.diff(track.s) > 1e-9)):
-        raise ValueError("有賽道區段的規劃速度為零，無法完成計時。請確認速度上限及車輛參數。")
+        raise InfeasibleLapError("有賽道區段的規劃速度為零，無法完成計時。請確認速度上限及車輛參數。")
     time = lap_time_vector(track.s, plan.speed)
-    report("整理逐點訊號")
-    signals = build_signals(track, plan, time, limits, power, check_deadline=check_deadline)
-    if not all(np.isfinite(signal.values).all() for signal in signals.values()):
-        raise ValueError("逐點訊號含有非有限值，請確認輸入參數及模型資料。")
+    signals = {}
+    if include_signals:
+        report("整理逐點訊號")
+        signals = build_signals(track, plan, time, limits, power, check_deadline=check_deadline)
+        if not all(np.isfinite(signal.values).all() for signal in signals.values()):
+            raise ValueError("逐點訊號含有非有限值，請確認輸入參數及模型資料。")
     overspeed_points = int(np.count_nonzero(plan.speed > plan.lateral_speed_limit + BRAKING_SPEED_TOLERANCE))
     check_deadline()
     return Result(track, plan, time, signals, overspeed_points)

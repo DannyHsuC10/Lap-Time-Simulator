@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from math import ceil, log2
 
 import numpy as np
 
@@ -10,7 +11,7 @@ from .brake import brake as brake_torque, hydraulic_brake
 from .car import Car
 from .motor import Throttle_command
 from .suspension import wheel_load_stiffness
-from .tire import TabulatedTire, TireEnvelope
+from .tire import FrictionEllipse, TabulatedTire, TireEnvelope
 from .track import SectionGeometry
 
 
@@ -19,6 +20,10 @@ LATERAL_SPEED_MAX_ITERATIONS = 12
 LATERAL_SPEED_TOLERANCE = 0.02
 ACCELERATION_MAX_ITERATIONS = 10
 ACCELERATION_TOLERANCE = 0.1
+ACCELERATION_MAX = 35.0
+ACCELERATION_BINS = 2 ** min(
+    ACCELERATION_MAX_ITERATIONS, ceil(log2(ACCELERATION_MAX / ACCELERATION_TOLERANCE)),
+)
 BRAKING_SPEED_MAX_ITERATIONS = 10
 BRAKING_SPEED_TOLERANCE = 0.06
 SPEED_PLAN_CONVERGENCE_TOLERANCE = 0.05
@@ -267,8 +272,10 @@ class AeroTireLimits:
     ) -> tuple[float, float] | None:
         if fz <= 0:
             return (0.0, 0.0) if fy == 0 else None
-        fz = float(np.clip(fz, *self.tire_model.fz_range))
-        camber_deg = float(np.clip(camber_deg, *self.tire_model.camber_range))
+        lower, upper = self.tire_model.fz_range
+        fz = min(max(fz, lower), upper)
+        lower, upper = self.tire_model.camber_range
+        camber_deg = min(max(camber_deg, lower), upper)
         limits = self.tire_model.fx_limits(fy, fz=fz, camber_deg=camber_deg)
         if not limits:
             return None
@@ -300,9 +307,22 @@ class AeroTireLimits:
         return np.zeros_like(loads)
 
     def rolling_force(self, state: WheelLoadState, radii: np.ndarray) -> float:
-        if self.car.settings.load_model == "point_mass" and self.car.settings.rolling_model == "constant":
-            return self.car.settings.rolling_coefficient * state.total_load
         return float(self.rolling_resistance(state.loads, radii).sum())
+
+    def point_mass_rolling(self, total_load):
+        model = self.car.settings.rolling_model
+        if model == "constant":
+            return self.car.settings.rolling_coefficient * total_load
+        if model == "table" and isinstance(self.tire_model, TabulatedTire):
+            return np.where(total_load > 0, 4 * self.tire_model.rolling_torque(total_load / 4) / self.car.R_tire, 0.0)
+        return total_load * 0.0
+
+    def point_mass_fx_limits(self, total_load: float, total_fy: float):
+        if isinstance(self.tire_model, FrictionEllipse):
+            return self.tire_model.fx_limits(total_fy, fz=total_load)
+        # Fitted and tabulated envelopes use single-tire normal loads.
+        bounds = self.fx_limits_at_fz_and_fy(total_load / 4, total_fy / 4)
+        return () if bounds is None else (4 * bounds[0], 4 * bounds[1])
 
     def lateral_forces(self, total_fy: float, loads: np.ndarray) -> np.ndarray:
         """Balance the front/rear lateral-force moments about the CG."""
@@ -320,7 +340,15 @@ class AeroTireLimits:
 
     def available_lateral_force(self, state: WheelLoadState) -> float:
         if self.car.settings.load_model == "point_mass":
-            return self.tire_model.peak_forces(state.total_load)[1]
+            if isinstance(self.tire_model, FrictionEllipse):
+                return self.tire_model.peak_forces(state.total_load)[1]
+            if state.total_load <= 0:
+                return 0.0
+            lower, upper = self.tire_model.fz_range
+            load = min(max(state.total_load / 4, lower), upper)
+            lower, upper = self.tire_model.camber_range
+            camber = min(max(0.0, lower), upper)
+            return 4 * self.tire_model.peak_forces(load, camber)[1]
         return float(np.sum(self.balanced_lateral_limits(state.loads, camber_from_roll(state.theta))))
 
 
@@ -599,8 +627,8 @@ def summarize_plan(track, speed, lateral_speed_limit, tire_limit_map, report, pa
     rolling = tire_limit_map.rolling_resistance(wheel_loads, radii)
     total_load = np.array([state.total_load for state in wheel_states])
     total_rolling = rolling.sum(axis=1)
-    if car.settings.load_model == "point_mass" and car.settings.rolling_model == "constant":
-        total_rolling = total_load * car.settings.rolling_coefficient
+    if car.settings.load_model == "point_mass":
+        total_rolling = tire_limit_map.point_mass_rolling(total_load)
 
     return SpeedPlan(
         lateral_speed_limit=lateral_speed_limit,
@@ -645,9 +673,11 @@ def drive_accel_at_speed(
 def drive_accel_at_lateral_accel(
     speed: float, ay: float, tire_limit_map: AeroTireLimits, power_brake_limit: PowerBrakeSystemLimit,
 ) -> float:
+    if tire_limit_map.car.settings.load_model == "point_mass":
+        return point_mass_accel(speed, ay, tire_limit_map, power_brake_limit, braking=False)
     vehicle_mass = tire_limit_map.car.m
     low = 0.0
-    high = 35.0
+    high = ACCELERATION_MAX
 
     for _ in range(ACCELERATION_MAX_ITERATIONS):
         if high - low <= ACCELERATION_TOLERANCE:
@@ -660,19 +690,15 @@ def drive_accel_at_lateral_accel(
             1e-9,
         )
         aero_drag = float(load_state.aero_result["F_drag"])
-        if tire_limit_map.car.settings.load_model == "point_mass":
-            fx = tire_limit_map.tire_model.fx_limits(vehicle_mass * ay, fz=load_state.total_load)
-            drive_force = min(max(fx, default=0.0), float(power_brake_limit.max_drive_force_distribution(speed).sum()))
-        else:
-            fy_wheels = tire_limit_map.lateral_forces(vehicle_mass * ay, loads)
-            bounds = tire_limit_map.fx_limits_for_loads_and_fy(
-                loads, fy_wheels, camber_from_roll(load_state.theta),
-            )
-            if bounds is None:
-                high = candidate_ax
-                continue
-            _, drive_fx = bounds
-            drive_force = float(power_brake_limit.scale_limited_drive_force(speed, drive_fx, loaded_radius).sum())
+        fy_wheels = tire_limit_map.lateral_forces(vehicle_mass * ay, loads)
+        bounds = tire_limit_map.fx_limits_for_loads_and_fy(
+            loads, fy_wheels, camber_from_roll(load_state.theta),
+        )
+        if bounds is None:
+            high = candidate_ax
+            continue
+        _, drive_fx = bounds
+        drive_force = float(power_brake_limit.scale_limited_drive_force(speed, drive_fx, loaded_radius).sum())
         rolling = tire_limit_map.rolling_force(load_state, loaded_radius)
         capacity_ax = max(
             (drive_force - aero_drag - rolling)
@@ -710,9 +736,11 @@ def brake_decel_at_speed(
 def brake_decel_at_lateral_accel(
     speed: float, ay: float, tire_limit_map: AeroTireLimits, power_brake_limit: PowerBrakeSystemLimit,
 ) -> float:
+    if tire_limit_map.car.settings.load_model == "point_mass":
+        return point_mass_accel(speed, ay, tire_limit_map, power_brake_limit, braking=True)
     vehicle_mass = tire_limit_map.car.m
     low = 0.0
-    high = 35.0
+    high = ACCELERATION_MAX
 
     for _ in range(ACCELERATION_MAX_ITERATIONS):
         if high - low <= ACCELERATION_TOLERANCE:
@@ -729,19 +757,15 @@ def brake_decel_at_lateral_accel(
             1e-9,
         )
         aero_drag = float(load_state.aero_result["F_drag"])
-        if tire_limit_map.car.settings.load_model == "point_mass":
-            fx = tire_limit_map.tire_model.fx_limits(vehicle_mass * ay, fz=load_state.total_load)
-            brake_force = max(min(fx, default=0.0), float(power_brake_limit.max_brake_force_distribution().sum()))
-        else:
-            fy_wheels = tire_limit_map.lateral_forces(vehicle_mass * ay, loads)
-            bounds = tire_limit_map.fx_limits_for_loads_and_fy(
-                loads, fy_wheels, camber_from_roll(load_state.theta),
-            )
-            if bounds is None:
-                high = candidate_decel
-                continue
-            brake_fx, _ = bounds
-            brake_force = float(power_brake_limit.scale_limited_brake_force(brake_fx, loaded_radius).sum())
+        fy_wheels = tire_limit_map.lateral_forces(vehicle_mass * ay, loads)
+        bounds = tire_limit_map.fx_limits_for_loads_and_fy(
+            loads, fy_wheels, camber_from_roll(load_state.theta),
+        )
+        if bounds is None:
+            high = candidate_decel
+            continue
+        brake_fx, _ = bounds
+        brake_force = float(power_brake_limit.scale_limited_brake_force(brake_fx, loaded_radius).sum())
         rolling = tire_limit_map.rolling_force(load_state, loaded_radius)
         capacity_decel = max(
             (-brake_force + aero_drag + rolling)
@@ -755,6 +779,22 @@ def brake_decel_at_lateral_accel(
             high = candidate_decel
 
     return low
+
+
+def point_mass_accel(speed, ay, limits, power, *, braking):
+    mass = limits.car.m
+    state = limits.wheel_load_state(speed, 0.0, ay)
+    lower, upper = limits.point_mass_fx_limits(state.total_load, mass * ay) or (0.0, 0.0)
+    resistance = state.aero_result["F_drag"] + limits.point_mass_rolling(state.total_load)
+    if braking:
+        wheel_force = float(power.max_brake_force_distribution().sum())
+        capacity = (-max(lower, wheel_force) + resistance) / mass
+    else:
+        wheel_force = float(power.max_drive_force_distribution(speed).sum())
+        capacity = (min(upper, wheel_force) - resistance) / mass
+    # Match the feasible lower endpoint of the regular acceleration bisection.
+    step = ACCELERATION_MAX / ACCELERATION_BINS
+    return min(max(capacity, 0.0), ACCELERATION_MAX - step) // step * step
 
 
 def distribute_lateral_force(total_fy: float, loads: np.ndarray) -> np.ndarray:

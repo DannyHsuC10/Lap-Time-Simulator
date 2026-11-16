@@ -1,6 +1,8 @@
+import json
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import numpy as np
@@ -13,14 +15,21 @@ from lap_sim_lab.planner import (
 )
 from lap_sim_lab.settings import Settings
 from lap_sim_lab.simulation import simulate
-from lap_sim_lab.tire import FrictionEllipse
+from lap_sim_lab.tire import FrictionEllipse, build_tire_model
 from lap_sim_lab.timeout_recovery import describe_model_changes, lower_model_choices, timeout_suggestions
 
 
 class SolverTests(unittest.TestCase):
+    def write_ellipse(self, mu_x, mu_y):
+        folder = TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = Path(folder.name) / "ellipse.json"
+        path.write_text(json.dumps({"mu_x": mu_x, "mu_y": mu_y}), encoding="utf-8")
+        return path
+
     def test_tire_sweep_holds_static_loads_and_uses_ay_only_for_force_demand(self):
         settings = Settings(
-            tire_model="ellipse", ellipse_mu_x=1.0, ellipse_mu_y=1.0,
+            tire_model="ellipse", ellipse_path=self.write_ellipse(1.0, 1.0),
             aero_path=Path("missing-aero.json"), mass=300.0, wheelbase=2.0, cg_from_front=0.8,
         )
         baseline = sweep_tires(settings, AttitudeSweep())
@@ -33,7 +42,7 @@ class SolverTests(unittest.TestCase):
     def test_ggv_point_mass_slices_follow_lateral_grip_and_speed_range(self):
         settings = Settings(
             tire_model="ellipse", load_model="point_mass", aero_enabled=False,
-            ellipse_mu_y=1.5, max_speed=20,
+            ellipse_path=self.write_ellipse(1.77, 1.5), max_speed=20,
         )
         slices = build_ggv(settings)
         self.assertEqual([part.speed_kmh for part in slices], [0, 18, 36, 54, 72])
@@ -42,6 +51,29 @@ class SolverTests(unittest.TestCase):
             self.assertTrue(np.isfinite(part.drive_g).all() and np.isfinite(part.brake_g).all())
             self.assertGreaterEqual(part.drive_g[20], part.drive_g[0])
             self.assertLess(part.brake_g[20], part.brake_g[0])
+
+    def test_ellipse_json_accepts_existing_fit_and_validates_fixed_coefficients(self):
+        settings = Settings(tire_model="ellipse", ellipse_path=Settings().tire_path)
+        self.assertEqual(build_tire_model(settings).n, 2.0)
+        self.assertEqual(build_tire_model(replace(settings, load_model="point_mass")).n, 2.0)
+        with self.assertRaisesRegex(ValueError, "mu_x.*mu_y"):
+            build_tire_model(replace(settings, ellipse_path=self.write_ellipse(1.5, 0)))
+
+    def test_tire_utilization_scales_peaks_and_combined_grip_in_every_model(self):
+        base = Settings()
+        for settings in (base, replace(base, tire_model="table"),
+                         replace(base, tire_model="ellipse", load_model="point_mass"),
+                         replace(base, tire_model="ellipse", ellipse_path=base.tire_path)):
+            original = build_tire_model(settings)
+            peaks = np.array(original.peak_forces(800.0))
+            for utilization in (0.8, 1.2):
+                with self.subTest(model=settings.tire_model, path=settings.ellipse_path, utilization=utilization):
+                    model = build_tire_model(replace(settings, tire_utilization=utilization))
+                    np.testing.assert_allclose(model.peak_forces(800.0), utilization * peaks)
+                    for fy in (-0.65 * peaks[1], 0.65 * peaks[1]):
+                        fx = np.array(original.fx_limits(fy, fz=800.0))
+                        self.assertEqual(len(fx), 2)
+                        np.testing.assert_allclose(model.fx_limits(utilization * fy, fz=800.0), utilization * fx)
 
     def test_lateral_capacity_respects_axle_yaw_balance_and_weakest_wheel(self):
         car = Car(Settings(wheelbase=2.0, cg_from_front=1.0), preload_motor=False)
@@ -71,12 +103,13 @@ class SolverTests(unittest.TestCase):
 
     def test_timeout_recovery_keeps_point_mass_compatible(self):
         settings = Settings(
-            tire_model="table", ellipse_source="fit", yaw_correction=True,
+            tire_model="table", ellipse_path=Settings().tire_path, yaw_correction=True,
             aero_enabled=False,
         )
         changes = lower_model_choices(settings)
         self.assertEqual(changes["tire_model"], "ellipse")
-        self.assertEqual(changes["ellipse_source"], "fixed")
+        self.assertEqual(changes["ellipse_path"], Settings().ellipse_path)
+        self.assertIn("friction_ellipse.json", describe_model_changes(settings, changes))
         self.assertIs(changes["yaw_correction"], False)
         intermediate = replace(settings, **changes)
         intermediate.validate()

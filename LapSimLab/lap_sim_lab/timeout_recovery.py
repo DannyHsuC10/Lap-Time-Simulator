@@ -1,9 +1,12 @@
 """Choose simpler vehicle models after a lap calculation times out."""
 
-from .settings import MODEL_CHOICES, Settings
+from pathlib import Path
+
+from .settings import DEFAULT_ELLIPSE_PATH, MODEL_CHOICES, Settings
+from .tire import FrictionEllipse, read_tire_json
 
 
-def lower_model_choices(settings: Settings) -> dict[str, str | bool]:
+def lower_model_choices(settings: Settings) -> dict[str, str | bool | Path]:
     changes = {}
     for key in ("tire_model", "load_model", "motor_model", "brake_model",
                 "aero_model", "rolling_model"):
@@ -24,16 +27,21 @@ def lower_model_choices(settings: Settings) -> dict[str, str | bool]:
     if changes.get("load_model") == "point_mass":
         if settings.tire_model != "ellipse":
             changes["tire_model"] = "ellipse"
-        if settings.ellipse_source != "fixed":
-            changes["ellipse_source"] = "fixed"
+        if settings.ellipse_path != DEFAULT_ELLIPSE_PATH:
+            try:
+                FrictionEllipse.from_coefficients(read_tire_json(settings.ellipse_path))
+            except ValueError:
+                changes["ellipse_path"] = DEFAULT_ELLIPSE_PATH
     return changes
 
 
-def describe_model_changes(settings: Settings, changes: dict[str, str | bool]) -> str:
+def describe_model_changes(settings: Settings, changes: dict[str, str | bool | Path]) -> str:
     lines = []
     for key, new in changes.items():
         if key == "yaw_correction":
             lines.append("偏航慣量修正　啟用 >> 關閉")
+        elif key == "ellipse_path":
+            lines.append(f"摩擦橢圓 JSON　{Path(settings.ellipse_path).name} >> {new.name}")
         else:
             label, choices = MODEL_CHOICES[key]
             lines.append(f"{label}　{choices[getattr(settings, key)]} >> {choices[new]}")

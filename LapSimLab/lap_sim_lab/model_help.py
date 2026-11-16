@@ -10,13 +10,13 @@ from .settings import MODEL_CHOICES
 
 METHODS = {
     "tire_model": {
-        "ellipse": "從輪胎 JSON 依輪載與外傾角算純縱向、純側向峰值，再用 n = 2 的橢圓算指定 Fy 下剩餘的 Fx。",
+        "ellipse": "讀取 JSON 的 mu_x、mu_y，分別乘以輪載取得純縱向及純側向峰值。選擇擬合 JSON 時，峰值隨輪載與外傾角改變。兩種格式都用 n = 2 的橢圓算指定 Fy 下剩餘的 Fx。",
         "superellipse": "從輪胎 JSON 依輪載與外傾角算純縱向、純側向峰值，再用指數 n 算超橢圓。剩餘縱向力為 Fx 峰值 × [1 − (|Fy| / Fy 峰值)ⁿ]^(1/n)。",
         "table": "用 Pacejka 資料的 Fz 與 Fy 插值，分別取得驅動與煞車的 Fx 邊界。資料表以零外傾角為基準。含滑移資料的表也能事後反推側滑角、滑移率、輪胎力矩與力殘差。",
     },
     "load_model": {
         "compliant": "以 m × ax × 重心高 ÷ 軸距在前後軸間轉移輪載，按前後側傾剛性分配左右載重轉移。輪胎垂直壓縮量 Fz / Kt 的左右差和前後差，會再加到側傾與俯仰。",
-        "point_mass": "整台車用總輪載 Fz = max(mg + 下壓力, 0) 和固定 μx、μy 的摩擦橢圓求抓地。保留整車合力，四輪輪載、單輪扭矩與懸吊訊號填 0。",
+        "point_mass": "整台車以 Fz = max(mg + 下壓力, 0) 求抓地。固定摩擦係數直接乘總輪載；擬合與查表模型以四分之一的總輪載、零外傾角估算單輪抓地並合計。四輪輪載、單輪扭矩與懸吊訊號填 0。",
     },
     "brake_model": {
         "leverage": "踏板力 × 機械利益得到等效總煞車力，再乘自由半徑得到總輪端扭矩。依前後配比拆到兩軸，每軸左右輪各分一半。",
@@ -79,20 +79,15 @@ def describe_models(options, inputs, files, *, aero_enabled, yaw_correction, clo
     )
     tire_data = {
         "table": f"資料表：{files['tire_table_path']}。輪載超出範圍時用表格端點。",
-    }
-    tire_method = METHODS["tire_model"][tire]
-    if tire == "ellipse" and options["ellipse_source"] == "fixed":
-        tire_method = "純縱向峰值 = μx × Fz，純側向峰值 = μy × Fz。以 n = 2 的橢圓計算指定 Fy 下剩餘的 Fx。"
-        tire_data[tire] = f"目前 μx = {inputs['ellipse_mu_x']}，μy = {inputs['ellipse_mu_y']}。"
-    if tire not in tire_data:
-        tire_data[tire] = (
+        "ellipse": f"摩擦橢圓 JSON：{files['ellipse_path']}。可用固定摩擦係數或擬合係數。",
+        "superellipse": (
             f"輪胎檔：{files['tire_path']}。輪載及外傾角以擬合範圍的端點為限。"
-            f"縱／橫向峰值倍率為 {inputs['tire_fx_scale']}／{inputs['tire_fy_scale']}。"
-        )
-        if tire == "superellipse":
-            tire_data[tire] += " 指數 n 直接採用所選輪胎 JSON 的值。"
+            "指數 n 直接採用所選輪胎 JSON 的值。"
+        ),
+    }
     tire_section = section(
-        "tire_model", tire_method, tire_data[tire],
+        "tire_model", METHODS["tire_model"][tire], tire_data[tire],
+        f"輪胎使用率為 {inputs['tire_utilization']}（1 = 100%），整個 Fx／Fy 抓地包絡等比例縮放。",
     )
 
     load = options["load_model"]

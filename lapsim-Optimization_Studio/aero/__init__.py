@@ -1,1 +1,0 @@
-"""Aerodynamic model package."""

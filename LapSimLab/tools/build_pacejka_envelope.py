@@ -1,4 +1,4 @@
-"""Convert the repository's trusted Pacejka pickle to a portable NumPy envelope.
+"""Convert a Pacejka force map to a LapSimLab NumPy envelope.
 
 Run this offline with SciPy installed. The desktop application reads only the
 generated numeric NPZ and does not deserialize pickle files.
@@ -12,10 +12,25 @@ import numpy as np
 from scipy.spatial import ConvexHull
 
 
-def build_envelope(source: Path, destination: Path):
+AXIS_KEYS = ("FZ", "SA_deg", "SL")
+TABLE_KEYS = ("FX", "FY", "MX", "MZ", "RRT")
+
+
+def read_force_map(source: Path):
+    if source.suffix.lower() == ".npz":
+        with np.load(source, allow_pickle=False) as archive:
+            axes = {key: archive[f"axis_{key}"] for key in AXIS_KEYS}
+            tables = {key: archive[f"table_{key}"] for key in TABLE_KEYS}
+        return axes, tables
+    if source.suffix.lower() != ".pkl":
+        raise ValueError(f"Expected a .npz or trusted .pkl force map: {source}")
     with source.open("rb") as stream:
         source_map = pickle.load(stream)
-    axes, tables = source_map["axes"], source_map["tables"]
+    return source_map["axes"], source_map["tables"]
+
+
+def build_envelope(source: Path, destination: Path):
+    axes, tables = read_force_map(source)
     fz = axes["FZ"]
     zero_alpha = int(np.argmin(np.abs(axes["SA_deg"])))
     zero_slip = int(np.argmin(np.abs(axes["SL"])))
@@ -45,14 +60,18 @@ def build_envelope(source: Path, destination: Path):
         destination, fz=fz, fy_fraction=fraction, fy_min=fy_min, fy_max=fy_max,
         fy_pure=fy_pure, brake=brake, drive=drive, rrt=rrt,
         slip_angle=axes["SA_deg"], slip_ratio=axes["SL"],
-        **{f"grid_{key}": np.asarray(tables[key], dtype=np.float32) for key in ("FX", "FY", "MX", "MZ", "RRT")},
+        **{f"grid_{key}": np.asarray(tables[key], dtype=np.float32) for key in TABLE_KEYS},
     )
 
 
 if __name__ == "__main__":
-    root = Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--trusted-source", type=Path, default=root / "Steady_lapsim" / "Pacejka_tire_maping" / "tire_force_map.pkl")
-    parser.add_argument("--output", type=Path, default=root / "LapSimLab" / "input_data" / "pacejka_envelope.npz")
+    parser.add_argument(
+        "--source", "--trusted-source", type=Path,
+        default=root / "Pacejka_tire_model" / "hoosier_43075_r20_w8.npz",
+        help="Raw NPZ force map or a trusted legacy PKL force map.",
+    )
+    parser.add_argument("--output", type=Path, default=root / "input_data" / "pacejka_envelope.npz")
     args = parser.parse_args()
-    build_envelope(args.trusted_source, args.output)
+    build_envelope(args.source, args.output)

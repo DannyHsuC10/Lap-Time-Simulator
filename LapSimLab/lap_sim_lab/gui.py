@@ -13,22 +13,29 @@ from .analysis_gui import MotorPage, SweepPage
 from .charts import FONT, ResultChart, SpeedMap
 from .ggv_gui import GGVPage
 from .model_help import ModelHelpPage, describe_models
+from .optimization import FIXED_MODELS, optimize_lap
+from .optimization_gui import OptimizationPage
 from .planner import GRAVITY
 from .settings import MODEL_CHOICES, Settings
+from .settings_profile import load_profile, save_profile
 from .signal_view import SignalView
 from .simulation import simulate, write_csv
+from .tire import build_tire_model
 from .timeout_recovery import describe_model_changes, lower_model_choices, timeout_suggestions
 
 
 FILE_FIELDS = {
     "track_path": ("賽道分段", ".csv"),
     "tire_path": ("輪胎係數", ".json"),
+    "ellipse_path": ("摩擦橢圓 JSON", ".json"),
     "motor_path": ("馬達曲線", ".csv"),
     "aero_path": ("空力係數", ".json"),
     "tire_table_path": ("輪胎力資料表", ".npz"),
     "lp03_path": ("LP03 電壓包絡", ".csv"),
 }
 OPTIONAL_NUMBERS = {"aero_cl0", "aero_cd0"}
+SETTING_TOGGLES = ("aero_enabled", "yaw_correction", "closed_lap", "braking_lookahead")
+PROFILE_FILETYPES = [("LapSimLab 設定 JSON", "*.json")]
 
 SURFACE = "#f1f5f9"
 WHITE = "#ffffff"
@@ -44,6 +51,8 @@ class LapSimLab(tk.Tk):
         self.minsize(1040, 665)
         self.configure(bg=SURFACE)
         self.default = Settings()
+        self.profile_path = None
+        self.applying_inputs = False
         self.paths = {key: getattr(self.default, key) for key in FILE_FIELDS}
         self.file_vars = {key: tk.StringVar(value=path.name) for key, path in self.paths.items()}
         self.entries = {}
@@ -62,6 +71,7 @@ class LapSimLab(tk.Tk):
         self.result_revision = None
         self.revision = 0
         self.busy = False
+        self.optimization_cancel = None
         self.timed_out_settings = None
         self.events = SimpleQueue()
 
@@ -101,6 +111,8 @@ class LapSimLab(tk.Tk):
         header.pack(fill="x")
         ttk.Label(header, text="LapSimLab", style="Header.TLabel").pack(side="left")
         ttk.Label(header, text="FSAE  圈速模擬", style="Muted.TLabel").pack(side="left", padx=14)
+        ttk.Button(header, text="儲存設定", command=self.save_settings).pack(side="right")
+        ttk.Button(header, text="載入設定", command=self.load_settings).pack(side="right", padx=(0, 8))
 
         body = ttk.Frame(self, padding=(19, 2, 19, 0))
         body.pack(fill="both", expand=True)
@@ -165,8 +177,13 @@ class LapSimLab(tk.Tk):
         self.ggv_page = GGVPage(self.result_pages, self.read_settings)
         self.signal_page = SignalView(self.result_pages, self.export)
         self.model_help = ModelHelpPage(self.result_pages)
+        self.optimization_page = OptimizationPage(
+            self.result_pages, self.entries, self.start_optimization, self.cancel_optimization, self.apply_optimization,
+        )
+        self.optimization_page.refresh_sources(self.selected_models(), self.paths["track_path"].name)
         for page, label in (
             (self.signal_page, "訊號檢視"),
+            (self.optimization_page, "最佳化"),
             (self.aero_page, "空力掃描"), (self.motor_page, "馬達曲線"), (self.tire_page, "輪胎力掃描"),
             (self.ggv_page, "GGV"), (self.model_help, "模型說明"),
         ):
@@ -215,21 +232,18 @@ class LapSimLab(tk.Tk):
     def build_inputs(self, tabs):
         tire = self.input_tab(tabs, "輪胎")
         self.model_row(tire, "tire_model")
-        self.model_row(tire, "ellipse_source")
-        self.number_row(tire, "ellipse_mu_x", "縱向摩擦係數 μx")
-        self.number_row(tire, "ellipse_mu_y", "側向摩擦係數 μy")
         self.file_row(tire, "tire_path")
-        self.number_row(tire, "tire_fx_scale", "縱向峰值倍率")
-        self.number_row(tire, "tire_fy_scale", "側向峰值倍率")
+        self.file_row(tire, "ellipse_path")
         self.file_row(tire, "tire_table_path")
         self.number_row(tire, "tire_radius", "自由半徑", "m")
         self.model_row(tire, "rolling_model")
         self.number_row(tire, "rolling_coefficient", "固定滾阻係數")
         self.model_hint(tire, "rolling_model_hint", "目前輪胎未提供滾阻資料，滾阻為 0。")
 
-        suspension = self.input_tab(tabs, "懸吊")
+        suspension = self.input_tab(tabs, "懸吊與車體")
         self.model_row(suspension, "load_model")
         self.number_row(suspension, "mass", "總質量（含車手）", "kg")
+        self.number_row(suspension, "tire_utilization", "輪胎使用率", "1 = 100%")
         self.number_row(suspension, "wheelbase", "軸距", "m")
         self.number_row(suspension, "cg_from_front", "重心距前軸", "m")
         self.number_row(suspension, "cg_height", "重心高度", "m")
@@ -385,32 +399,25 @@ class LapSimLab(tk.Tk):
         for widget in (row, toggle):
             self.bind_input_scroll(widget)
 
-    def refresh_input_rows(self):
-        models = self.selected_models()
+    def visible_input_keys(self, models, *, aero, yaw):
         tire = models["tire_model"]
-        fitted = tire == "superellipse" or (tire == "ellipse" and models["ellipse_source"] == "fit")
-        fixed_ellipse = tire == "ellipse" and models["ellipse_source"] == "fixed"
         four_wheels = models["load_model"] != "point_mass"
         lp03 = models["motor_model"] == "lp03"
         hydraulic = models["brake_model"] == "hydraulic"
         lap = models["solver"] == "lap"
-        aero = self.aero_enabled.get()
         fixed_aero = aero and models["aero_model"] == "quadratic"
-        geometry = four_wheels or aero
         missing_rolling_table = models["rolling_model"] == "table" and tire != "table"
         conditional = {
-            "ellipse_source": tire == "ellipse",
-            "ellipse_mu_x": fixed_ellipse, "ellipse_mu_y": fixed_ellipse, "tire_path": fitted,
-            "tire_fx_scale": fitted, "tire_fy_scale": fitted,
+            "tire_path": tire == "superellipse", "ellipse_path": tire == "ellipse",
             "tire_table_path": tire == "table",
             "tire_stiffness": four_wheels, "rolling_coefficient": models["rolling_model"] == "constant",
             "rolling_model_hint": missing_rolling_table,
-            "wheelbase": geometry, "front_track": geometry, "rear_track": geometry,
+            "wheelbase": four_wheels, "front_track": four_wheels, "rear_track": four_wheels,
             "cg_from_front": four_wheels, "cg_height": four_wheels,
             "front_heave_stiffness": four_wheels, "front_roll_stiffness": four_wheels,
             "rear_stiffness_ratio": four_wheels,
             "yaw_correction": four_wheels,
-            "yaw_inertia": four_wheels and self.yaw_correction.get(),
+            "yaw_inertia": four_wheels and yaw,
             "motor_path": not lp03, "lp03_path": lp03, "dc_voltage": lp03,
             "brake_leverage": not hydraulic,
             **dict.fromkeys(("pedal_ratio", "master_diameter", "front_caliper_diameter", "rear_caliper_diameter",
@@ -419,7 +426,10 @@ class LapSimLab(tk.Tk):
             "curvature_sigma_m": models["curvature_model"] == "smooth", "passes": lap,
             "closed_lap": lap, "initial_speed": not lap, "braking_lookahead": not lap,
         }
-        active = {key for key in self.input_rows if conditional.get(key, True)}
+        return {key for key in self.input_rows if conditional.get(key, True)}
+
+    def refresh_input_rows(self):
+        active = self.visible_input_keys(self.selected_models(), aero=self.aero_enabled.get(), yaw=self.yaw_correction.get())
         changed = active ^ self.active_inputs
         if not changed:
             return
@@ -442,6 +452,8 @@ class LapSimLab(tk.Tk):
                 group.pack(fill="x", pady=(6, 0))
 
     def inputs_changed(self, *_):
+        if self.applying_inputs:
+            return
         self.clear_timeout_recovery()
         self.refresh_input_rows()
         self.revision += 1
@@ -449,6 +461,8 @@ class LapSimLab(tk.Tk):
         self.tire_page.invalidate()
         self.ggv_page.invalidate()
         self.motor_page.invalidate()
+        self.optimization_page.invalidate()
+        self.optimization_page.refresh_sources(self.selected_models(), self.paths["track_path"].name)
         self.export_button.state(["disabled"])
         self.signal_page.mark_stale()
         if self.result is not None:
@@ -471,19 +485,74 @@ class LapSimLab(tk.Tk):
                 if self.result_pages.select() == str(self.motor_page):
                     self.motor_page.refresh()
 
+    def save_settings(self):
+        selected = filedialog.asksaveasfilename(
+            parent=self, title="儲存 LapSimLab 設定", defaultextension=".json", filetypes=PROFILE_FILETYPES,
+            initialdir=self.profile_path.parent if self.profile_path else None,
+            initialfile=self.profile_path.name if self.profile_path else "lapsimlab_settings.json",
+        )
+        if not selected:
+            return
+        path = Path(selected)
+        try:
+            save_profile(path, self.input_snapshot())
+        except (OSError, ValueError) as exc:
+            self.status.set(f"無法儲存設定。{exc}")
+        else:
+            self.profile_path = path
+            self.status.set(f"已儲存設定至 {path}")
+
+    def input_snapshot(self):
+        snapshot = dict(self.paths, **self.selected_models())
+        snapshot.update({key: getattr(self, key).get() for key in SETTING_TOGGLES})
+        snapshot.update({key: entry.get() for key, entry in self.entries.items()})
+        return snapshot
+
+    def load_settings(self):
+        selected = filedialog.askopenfilename(
+            parent=self, title="載入 LapSimLab 設定", filetypes=PROFILE_FILETYPES,
+            initialdir=self.profile_path.parent if self.profile_path else None,
+        )
+        if not selected:
+            return
+        path = Path(selected)
+        try:
+            snapshot = load_profile(path)
+        except (OSError, ValueError) as exc:
+            self.status.set(f"無法載入設定。{exc}")
+            return
+        self.apply_inputs(snapshot)
+        self.profile_path = path
+        missing = []
+        for input_path in self.paths.values():
+            try:
+                available = input_path.is_file()
+            except OSError:
+                available = False
+            if not available:
+                missing.append(input_path.name)
+        detail = f"。請重新選擇找不到的資料檔：{'、'.join(missing)}。" if missing else "。按「計算」更新結果。"
+        self.status.set(f"已載入設定 {path.name}{detail}")
+
     def reset(self):
-        for key, var in self.entries.items():
-            value = getattr(self.default, key)
-            var.set("" if value is None else str(value))
-        self.aero_enabled.set(self.default.aero_enabled)
-        self.yaw_correction.set(self.default.yaw_correction)
-        self.closed_lap.set(self.default.closed_lap)
-        self.braking_lookahead.set(self.default.braking_lookahead)
-        for key, var in self.model_vars.items():
-            var.set(MODEL_CHOICES[key][1][getattr(self.default, key)])
-        for key, var in self.file_vars.items():
-            self.paths[key] = getattr(self.default, key)
-            var.set(self.paths[key].name)
+        self.apply_inputs({})
+
+    def apply_inputs(self, snapshot):
+        self.applying_inputs = True
+        try:
+            for key, var in self.entries.items():
+                value = snapshot.get(key, getattr(self.default, key))
+                var.set("" if value is None else str(value))
+            for key in SETTING_TOGGLES:
+                getattr(self, key).set(snapshot.get(key, getattr(self.default, key)))
+            for key, var in self.model_vars.items():
+                value = snapshot.get(key, getattr(self.default, key))
+                var.set(MODEL_CHOICES[key][1][value])
+            for key, var in self.file_vars.items():
+                self.paths[key] = snapshot.get(key, getattr(self.default, key))
+                var.set(self.paths[key].name)
+        finally:
+            self.applying_inputs = False
         self.inputs_changed()
         if self.result_pages.select() == str(self.motor_page):
             self.motor_page.refresh()
@@ -508,16 +577,20 @@ class LapSimLab(tk.Tk):
     def active_toggles(self):
         return {
             key: getattr(self, key).get() if key in self.active_inputs else getattr(self.default, key)
-            for key in ("aero_enabled", "yaw_correction", "closed_lap", "braking_lookahead")
+            for key in SETTING_TOGGLES
         }
 
-    def read_settings(self, *, vehicle_only=False, include_aero=True):
+    def read_settings(self, *, vehicle_only=False, include_aero=True, optimization=False):
         values = dict(self.paths, **self.active_toggles())
         values.update(self.selected_models())
+        active = self.active_inputs
+        if optimization:
+            values.update(FIXED_MODELS, closed_lap=self.closed_lap.get())
+            active = self.visible_input_keys(values, aero=values["aero_enabled"], yaw=values["yaw_correction"])
         if not include_aero:
             values["aero_enabled"] = False
         for key, entry in self.entries.items():
-            if key not in self.active_inputs:
+            if key not in active:
                 continue
             if not include_aero and key in {"aero_cl0", "aero_cd0"}:
                 continue
@@ -540,6 +613,8 @@ class LapSimLab(tk.Tk):
                 raise ValueError(f"請檢查「{self.field_labels[key]}」的數值。") from exc
         settings = Settings(**values)
         settings.validate()
+        if settings.tire_model == "ellipse":
+            build_tire_model(settings)
         return settings
 
     def calculate(self):
@@ -551,18 +626,10 @@ class LapSimLab(tk.Tk):
             self.status.set(f"輸入有誤。{exc}")
             return
         self.clear_timeout_recovery(clear_changes=False)
-        self.busy = True
-        if self.result_pages.select() == str(self.model_help):
-            self.refresh_model_help()
         revision = self.revision
-        self.run_button.state(["disabled"])
-        self.export_button.state(["disabled"])
         self.signal_page.mark_stale()
         if self.result is not None:
             self.result_title.set("上次計算結果")
-        self.status.set("正在計算…")
-        self.progress.pack(side="right", padx=(8, 0))
-        self.progress.start(18)
 
         def work():
             try:
@@ -574,6 +641,68 @@ class LapSimLab(tk.Tk):
             else:
                 self.events.put(("result", (revision, settings.track_path.stem, result)))
 
+        self.start_work(work, "正在計算…")
+
+    def start_optimization(self):
+        if self.busy:
+            return
+        try:
+            settings = self.read_settings(optimization=True)
+            options = self.optimization_page.read_options()
+        except ValueError as exc:
+            self.status.set(f"最佳化輸入有誤。{exc}")
+            return
+        self.clear_timeout_recovery()
+        revision = self.revision
+        cancelled = threading.Event()
+        self.optimization_cancel = cancelled
+
+        def check_cancelled():
+            if cancelled.is_set():
+                raise InterruptedError
+
+        def work():
+            try:
+                result = optimize_lap(settings, **options, check_cancelled=check_cancelled,
+                                      progress=lambda text: self.events.put(("progress", text)))
+            except InterruptedError:
+                self.events.put(("optimization_cancelled", None))
+            except Exception as exc:
+                self.events.put(("optimization_error", exc))
+            else:
+                self.events.put(("optimization_result", (revision, result)))
+
+        self.start_work(work, "正在最佳化…")
+
+    def cancel_optimization(self):
+        if self.optimization_cancel is not None:
+            self.optimization_cancel.set()
+            self.status.set("正在取消最佳化…")
+
+    def apply_optimization(self):
+        result = self.optimization_page.result
+        if self.busy or result is None:
+            return
+        snapshot = self.input_snapshot()
+        snapshot.update(FIXED_MODELS)
+        for bound in result.ranges:
+            key = bound.parameter.key
+            snapshot[key] = getattr(result.settings, key)
+        self.apply_inputs(snapshot)
+        self.result_pages.select(0)
+        self.show_result(self.revision, result.settings.track_path.stem, result.simulation)
+        self.export_button.state(["!disabled"])
+
+    def start_work(self, work, message):
+        self.busy = True
+        if self.result_pages.select() == str(self.model_help):
+            self.refresh_model_help()
+        self.optimization_page.set_busy(True, optimizing=self.optimization_cancel is not None)
+        self.run_button.state(["disabled"])
+        self.export_button.state(["disabled"])
+        self.status.set(message)
+        self.progress.pack(side="right", padx=(8, 0))
+        self.progress.start(18)
         threading.Thread(target=work, daemon=True).start()
         self.after(50, self.poll)
 
@@ -585,9 +714,12 @@ class LapSimLab(tk.Tk):
                 self.after(50, self.poll)
                 return
             if kind == "progress":
-                self.status.set(payload + "…")
+                if self.optimization_cancel is None or not self.optimization_cancel.is_set():
+                    self.status.set(payload + "…")
                 continue
             self.busy = False
+            self.optimization_cancel = None
+            self.optimization_page.set_busy(False)
             self.progress.stop()
             self.progress.pack_forget()
             self.run_button.state(["!disabled"])
@@ -597,6 +729,17 @@ class LapSimLab(tk.Tk):
             elif kind == "error":
                 self.result_revision = None
                 self.status.set(f"計算失敗。{payload}")
+            elif kind == "optimization_cancelled":
+                self.status.set("已取消最佳化。")
+            elif kind == "optimization_error":
+                self.status.set(f"最佳化失敗。{payload}")
+            elif kind == "optimization_result":
+                revision, result = payload
+                if revision == self.revision:
+                    self.optimization_page.show_result(result)
+                    self.status.set(f"最佳化完成，最低圈速 {result.simulation.lap_time:.3f} 秒。")
+                else:
+                    self.status.set("最佳化期間設定已變更，請重新最佳化。")
             else:
                 self.show_result(*payload)
             if self.result_revision == self.revision:
@@ -630,6 +773,10 @@ class LapSimLab(tk.Tk):
         for key, value in changes.items():
             if key == "yaw_correction":
                 self.yaw_correction.set(value)
+            elif key == "ellipse_path":
+                self.paths[key] = value
+                self.file_vars[key].set(value.name)
+                self.inputs_changed()
             else:
                 self.model_vars[key].set(MODEL_CHOICES[key][1][value])
         self.model_changes.configure(text=describe_model_changes(settings, changes))
