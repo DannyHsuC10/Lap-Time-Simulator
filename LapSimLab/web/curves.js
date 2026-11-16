@@ -1,11 +1,11 @@
 import { bounds, drawLines, lineColors } from "./charts.js";
 import { defaultAngle, drawGgvSurface } from "./ggv-chart.js";
 
-const titles = { motor: "馬達曲線", aero: "空力掃描", tire: "輪胎力掃描" };
+const titles = { motor: "Motor Curve", aero: "Aerodynamic Sweep", tire: "Tire Force Sweep" };
 const aeroViews = {
-  forces: ["N", [["下壓力", "F_down"], ["阻力", "F_drag"]]],
-  axles: ["N", [["前軸", "front"], ["後軸", "rear"]]],
-  coefficients: ["無因次", [["CL", "CL"], ["CD", "CD"]]],
+  forces: ["N", [["Downforce", "F_down"], ["Drag", "F_drag"]]],
+  axles: ["N", [["Front Axle", "front"], ["Rear Axle", "rear"]]],
+  coefficients: ["dimensionless", [["CL", "CL"], ["CD", "CD"]]],
 };
 
 export function installCurveTools(request, cancel) {
@@ -54,18 +54,18 @@ export function installCurveTools(request, cancel) {
     let yUnit;
     let lines;
     if (current === "motor") {
-      xUnit = "馬達轉速（RPM）";
-      yUnit = "扭矩（N·m）";
-      lines = [{ x: result.rpm, values: result.torque, label: "單馬達扭矩" }];
-      message = `${fileName} · ${result.rpm.length} 筆 · 峰值 ${bounds(result.torque)[1].toFixed(2)} N·m`;
+      xUnit = "Motor Speed (RPM)";
+      yUnit = "Torque (N·m)";
+      lines = [{ x: result.rpm, values: result.torque, label: "Single-Motor Torque" }];
+      message = `${fileName} · ${result.rpm.length} data points · Peak torque ${bounds(result.torque)[1].toFixed(2)} N·m`;
       if (result.voltage !== null) message += ` · ${result.voltage} V`;
     } else if (current === "aero") {
       const [unit, series] = aeroViews[byId("aero-metric").value];
-      xUnit = `${result.axis}（°）`;
+      xUnit = `${result.axis} (°)`;
       yUnit = unit;
       lines = series.map(([label, key]) => ({ label, x: result.angles, values: result.signals[key] }));
-      message = `${result.axis === "Roll" ? "Pitch" : "Roll"} 固定 ${result.fixed}°`;
-      if (!result.enabled) message += " · 空力已關閉";
+      message = `${result.axis === "Roll" ? "Pitch" : "Roll"} held at ${result.fixed}°`;
+      if (!result.enabled) message += " · aerodynamics disabled";
     } else {
       const metric = byId("tire-metric");
       const wheel = byId("tire-wheel");
@@ -73,25 +73,25 @@ export function installCurveTools(request, cancel) {
       if (result.pointMass) wheel.value = "all";
       const values = result[metric.value].map((row) => wheel.value === "all" ?
         row.reduce((sum, force) => sum + force, 0) : row[Number(wheel.value)]);
-      xUnit = "Roll（°）";
-      yUnit = "力（N）";
+      xUnit = "Roll (°)";
+      yUnit = "Force (N)";
       lines = [{ label: metric.selectedOptions[0].textContent, x: result.angles, values }];
-      message = result.pointMass ? "質點模型 · 整車抓地力" : "固定靜態輪載，Roll 用於換算外傾角";
+      message = result.pointMass ? "Point-mass model · Total vehicle grip" : "Static wheel loads are fixed. Roll determines camber.";
       if (metric.value !== "peaks") {
         message += ` · ay = ${result.ay} g`;
-        if (result.failures) message += ` · ${result.failures} 點無法滿足側向力需求，Fx 顯示為零`;
+        if (result.failures) message += ` · Fx is shown as 0 at ${result.failures} points where the requested Fy is infeasible`;
       }
     }
     sample.max = lines[0].x.length - 1;
     const marker = sample.valueAsNumber;
-    canvas.setAttribute("aria-label", `${titles[current]}，${xUnit}、${yUnit}`);
+    canvas.setAttribute("aria-label", `${titles[current]}, ${xUnit}, ${yUnit}`);
     drawLines(canvas, lines, xUnit, yUnit, marker);
     legend("curve-legend", lines);
     byId("curve-readout").textContent = [
       `${xUnit} ${lines[0].x[marker].toFixed(2)}`,
       ...lines.map(({ label, values }) => `${label} ${values[marker].toFixed(2)} ${yUnit}`),
     ].join(" · ");
-    if (!busy) status(current, changed.has(current) ? `設定已變更，請更新圖表。${message}` : message);
+    if (!busy) status(current, changed.has(current) ? `Settings changed. Update the plot to see the latest results. ${message}` : message);
   }
 
   function drawGgv() {
@@ -107,10 +107,10 @@ export function installCurveTools(request, cancel) {
     ggvCanvas.classList.toggle("surface", surface);
     let message;
     if (surface) {
-      ggvCanvas.setAttribute("aria-label", "GGV 3D 曲面，橫向加速度 ay、縱向加速度 ax 與車速");
+      ggvCanvas.setAttribute("aria-label", "GGV 3D surface, lateral acceleration ay, longitudinal acceleration ax, and vehicle speed");
       drawGgvSurface(ggvCanvas, result, angle);
-      legend("ggv-legend", [{ label: "驅動", color: "#50c6a9" }, { label: "煞車", color: "#e6a064" }]);
-      message = `${result.length} 個車速切片。拖曳旋轉，雙擊重設視角。`;
+      legend("ggv-legend", [{ label: "Drive", color: lineColors[0] }, { label: "Braking", color: lineColors[1] }]);
+      message = `${result.length} speed slices. Drag to rotate and double-click to reset the view.`;
     } else {
       const speed = byId("ggv-speed").value;
       const slices = speed === "all" ? result.filter((_, index) => index % 3 === 0) : [result[Number(speed)]];
@@ -118,17 +118,17 @@ export function installCurveTools(request, cancel) {
       const lines = slices.flatMap(({ ay, drive, brake }, index) => [
         { x: ay, values: drive, ...colors[index] }, { x: ay, values: brake, ...colors[index] },
       ]);
-      ggvCanvas.setAttribute("aria-label", "GGV 2D 切片，橫向加速度 ay 與縱向加速度 ax");
-      drawLines(ggvCanvas, lines, "橫向加速度 ay（g）", "縱向加速度 ax（g）");
+      ggvCanvas.setAttribute("aria-label", "GGV 2D slices, lateral acceleration ay and longitudinal acceleration ax");
+      drawLines(ggvCanvas, lines, "Lateral Acceleration ay (g)", "Longitudinal Acceleration ax (g)");
       legend("ggv-legend", colors);
-      message = "正 ax 為加速，負 ax 為煞車。ay 正值為左彎。";
+      message = "Positive ax indicates acceleration and negative ax indicates braking. Positive ay indicates a left turn.";
       if (speed !== "all") {
         const { ay, drive, brake } = slices[0];
-        message = `左彎 ${ay.at(-1).toFixed(2)} g · 右彎 ${Math.abs(ay[0]).toFixed(2)} g · ` +
-          `加速 ${Math.max(...drive).toFixed(2)} g · 煞車 ${Math.abs(Math.min(...brake)).toFixed(2)} g`;
+        message = `Left turn ${ay.at(-1).toFixed(2)} g · Right turn ${Math.abs(ay[0]).toFixed(2)} g · ` +
+          `Acceleration ${Math.max(...drive).toFixed(2)} g · Braking ${Math.abs(Math.min(...brake)).toFixed(2)} g`;
       }
     }
-    if (!busy) status("ggv", changed.has("ggv") ? `設定已變更，請更新圖表。${message}` : message);
+    if (!busy) status("ggv", changed.has("ggv") ? `Settings changed. Update the plot to see the latest results. ${message}` : message);
   }
 
   function start() {
@@ -227,7 +227,7 @@ export function installCurveTools(request, cancel) {
       changed.delete(tool);
       if (tool === "ggv") {
         const speed = byId("ggv-speed");
-        speed.replaceChildren(new Option("代表車速疊圖", "all"), ...result.map(({ speed: kmh }, index) =>
+        speed.replaceChildren(new Option("Representative Speeds", "all"), ...result.map(({ speed: kmh }, index) =>
           new Option(`${Number(kmh.toFixed(2))} km/h`, index)));
         drawGgv();
       } else {

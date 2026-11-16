@@ -6,6 +6,7 @@ from time import monotonic
 import numpy as np
 
 from .car import Car
+from .localization import localize
 from .planner import (
     AeroTireLimits, BRAKING_SPEED_TOLERANCE, GRAVITY, PowerBrakeSystemLimit, SegmentSpeedPath, SpeedPlan,
     build_friction_limited_speed_plan, build_segment_speed_path, lap_time_vector,
@@ -47,18 +48,18 @@ def simulate(settings: Settings, progress=None, *, include_signals=True, check_c
         if check_cancelled is not None:
             check_cancelled()
         if deadline is not None and monotonic() >= deadline:
-            raise TimeoutError(f"已達 {limit:g} 秒計算上限。")
+            raise TimeoutError(localize("已達 {limit:g} 秒計算上限。", limit=limit))
 
     def report(message):
         check_deadline()
         if progress is not None:
             progress(message)
 
-    report("讀取賽道、輪胎與馬達資料")
+    report(localize("讀取賽道、輪胎與馬達資料"))
     sections = read_sections(settings.track_path, settings.track_width, settings.step_m, check_deadline=check_deadline)
     track = build_segment_speed_path(sections)
     if not np.isfinite(track.s[-1]) or track.s[-1] <= 0:
-        raise ValueError("賽道路徑須有有限的正長度。")
+        raise ValueError(localize("賽道路徑須有有限的正長度。"))
     if settings.curvature_model == "smooth":
         track = replace(track, curvature=smooth_curvature(track.s, track.curvature, settings.curvature_sigma_m))
     check_deadline()
@@ -82,17 +83,17 @@ def simulate(settings: Settings, progress=None, *, include_signals=True, check_c
         plan.heave, plan.downforce, plan.drag, plan.cop, plan.cl, plan.cd,
         plan.total_normal_load, plan.rolling_resistance, plan.total_rolling_resistance,
     )):
-        raise ValueError("模擬結果含有非有限值，請確認輸入參數及模型資料。")
+        raise ValueError(localize("模擬結果含有非有限值，請確認輸入參數及模型資料。"))
     stopped = (plan.speed[:-1] + plan.speed[1:]) <= 2e-9
     if np.any(stopped & (np.diff(track.s) > 1e-9)):
-        raise InfeasibleLapError("有賽道區段的規劃速度為零，無法完成計時。請確認速度上限及車輛參數。")
+        raise InfeasibleLapError(localize("有賽道區段的規劃速度為零，無法完成計時。請確認速度上限及車輛參數。"))
     time = lap_time_vector(track.s, plan.speed)
     signals = {}
     if include_signals:
-        report("整理逐點訊號")
+        report(localize("整理逐點訊號"))
         signals = build_signals(track, plan, time, limits, power, check_deadline=check_deadline)
         if not all(np.isfinite(signal.values).all() for signal in signals.values()):
-            raise ValueError("逐點訊號含有非有限值，請確認輸入參數及模型資料。")
+            raise ValueError(localize("逐點訊號含有非有限值，請確認輸入參數及模型資料。"))
     overspeed_points = int(np.count_nonzero(plan.speed > plan.lateral_speed_limit + BRAKING_SPEED_TOLERANCE))
     check_deadline()
     return Result(track, plan, time, signals, overspeed_points)

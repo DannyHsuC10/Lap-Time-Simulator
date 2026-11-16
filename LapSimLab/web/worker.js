@@ -7,7 +7,7 @@ let runtime;
 
 async function initialize() {
   const archive = fetch(new URL("./solver.zip", self.location.href)).then((response) => {
-    if (!response.ok) throw new Error(`無法下載求解器（HTTP ${response.status}）。`);
+    if (!response.ok) throw new Error(`Could not download the solver (HTTP ${response.status}).`);
     return response.arrayBuffer();
   });
   const [pyodide, bundle] = await Promise.all([
@@ -47,7 +47,7 @@ async function prepareInputs(fs, files, uploads) {
       const path = `${inputDirectory}/${file}`;
       if (!fs.analyzePath(path).exists) {
         const response = await fetch(new URL(`./inputs/${encodeURIComponent(file)}`, import.meta.url));
-        if (!response.ok) throw new Error(`無法載入內建資料「${file}」（HTTP ${response.status}）。`);
+        if (!response.ok) throw new Error(`Could not load the built-in file ${file} (HTTP ${response.status}).`);
         fs.writeFile(path, new Uint8Array(await response.arrayBuffer()));
       }
       paths[key] = path;
@@ -65,7 +65,7 @@ async function prepareInputs(fs, files, uploads) {
 self.onmessage = async ({ data }) => {
   try {
     if (!runtime) {
-      report("下載 Python 求解環境…");
+      report("Downloading the Python runtime…");
       runtime = initialize().catch((error) => {
         runtime = undefined;
         throw error;
@@ -80,12 +80,12 @@ self.onmessage = async ({ data }) => {
     const solve = pyodide.globals.get(data.type === "inspect" ? "inspect_curve" : "simulate_browser");
     const uploads = [];
     try {
-      report("載入模型資料…");
+      report("Loading model data…");
       const paths = await prepareInputs(pyodide.FS, data.files, uploads);
       const valuesJson = JSON.stringify(data.values);
       const filesJson = JSON.stringify(paths);
       if (data.type === "inspect") {
-        report(data.tool === "ggv" ? "計算 GGV 車速切片…" : "計算曲線…");
+        report(data.tool === "ggv" ? "Calculating GGV speed slices…" : "Calculating the plot data…");
         const result = JSON.parse(solve(data.tool, valuesJson, filesJson, JSON.stringify(data.conditions)));
         const file = Object.values(data.files)[0];
         self.postMessage({ type: "inspection", tool: data.tool, result, fileName: file?.name ?? file });

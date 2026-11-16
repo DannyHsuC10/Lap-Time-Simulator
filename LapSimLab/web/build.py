@@ -14,6 +14,8 @@ import tarfile
 from urllib.request import urlopen
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from english import ENGLISH
+
 
 WEB = Path(__file__).resolve().parent
 PROJECT = WEB.parent
@@ -23,7 +25,7 @@ from lap_sim_lab.settings import MODEL_CHOICES, PERCENTAGE_FIELDS, Settings
 
 
 MODULES = (
-    "__init__", "aero", "analysis", "brake", "car", "ggv", "motor", "planner", "settings",
+    "__init__", "aero", "analysis", "brake", "car", "ggv", "localization", "motor", "planner", "settings",
     "signals", "simulation", "suspension", "tire", "track",
 )
 PYODIDE_VERSION = "314.0.8"
@@ -80,7 +82,10 @@ def build(destination):
         shutil.copyfile(WEB / name, destination / name)
     schema = {
         "defaults": values,
-        "models": {key: choices for key, (_, choices) in MODEL_CHOICES.items()},
+        "models": {
+            key: {value: ENGLISH[label] for value, label in choices.items()}
+            for key, (_, choices) in MODEL_CHOICES.items()
+        },
         "files": {key: source.name for key, source in data_files.items()},
         "percentages": sorted(PERCENTAGE_FIELDS),
         "quadraticAeroExample": quadratic_example.name,
@@ -91,6 +96,7 @@ def build(destination):
             path = Path("lap_sim_lab") / f"{name}.py"
             bundle.write(PROJECT / path, path.as_posix())
         bundle.write(WEB / "bridge.py", "bridge.py")
+        bundle.write(WEB / "english.py", "english.py")
     inputs = destination / "inputs"
     inputs.mkdir(exist_ok=True)
     for source in (*data_files.values(), quadratic_example):

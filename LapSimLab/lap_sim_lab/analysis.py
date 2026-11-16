@@ -6,6 +6,7 @@ from math import isfinite
 import numpy as np
 
 from .car import Car
+from .localization import localize
 from .planner import AeroTireLimits, GRAVITY, camber_from_roll
 from .settings import Settings
 from .tire import build_tire_model
@@ -23,11 +24,11 @@ class AttitudeSweep:
 
     def poses(self):
         if self.axis not in ("Roll", "Pitch"):
-            raise ValueError("掃描角度須為 Roll 或 Pitch。")
+            raise ValueError(localize("掃描角度須為 Roll 或 Pitch。"))
         if not 0 < self.extent_deg < 90 or not abs(self.fixed_deg) < 90:
-            raise ValueError("掃描幅度須介於 0° 與 90°，固定角的絕對值須小於 90°。")
+            raise ValueError(localize("掃描幅度須介於 0° 與 90°，固定角的絕對值須小於 90°。"))
         if not all(map(isfinite, (self.speed_kmh, self.heave_mm, self.ax_g, self.ay_g))) or self.speed_kmh < 0:
-            raise ValueError("車速須為非負數，且車速、Heave 和加速度都須為有限值。")
+            raise ValueError(localize("車速須為非負數，且車速、Heave 和加速度都須為有限值。"))
         angles = np.linspace(-self.extent_deg, self.extent_deg, 121)
         roll = angles if self.axis == "Roll" else np.full_like(angles, self.fixed_deg)
         pitch = angles if self.axis == "Pitch" else np.full_like(angles, self.fixed_deg)
@@ -65,7 +66,7 @@ class TireSweepResult:
 
 def sweep_tires(settings: Settings, sweep: AttitudeSweep) -> TireSweepResult:
     if not 0 < sweep.extent_deg < 90 or not isfinite(sweep.ay_g):
-        raise ValueError("Roll 掃描幅度須介於 0° 與 90°，橫向加速度須為有限值。")
+        raise ValueError(localize("Roll 掃描幅度須介於 0° 與 90°，橫向加速度須為有限值。"))
     angles = np.linspace(-sweep.extent_deg, sweep.extent_deg, 121)
     car = Car(replace(settings, aero_enabled=False), preload_motor=False)
     limits = AeroTireLimits(build_tire_model(settings), car)

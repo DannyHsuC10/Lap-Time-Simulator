@@ -29,12 +29,12 @@ export function drawGgvSurface(canvas, slices, angle) {
           const corners = [previous[column - 1], previous[column], current[column], current[column - 1]];
           const depth = corners.reduce((sum, point) => sum + point[2], 0) / corners.length;
           const lightness = 34 + 25 * row / (bands.length - 1);
-          faces.push({ corners, depth, fill: `hsl(${branch === "drive" ? 166 : 27} 60% ${lightness}%)` });
+          faces.push({ corners, depth, fill: `hsl(${branch === "drive" ? 174 : 27} 60% ${lightness}%)` });
         }
       }
     }
     faces.sort((a, b) => a.depth - b.depth);
-    ctx.strokeStyle = "#142534";
+    ctx.strokeStyle = "#111d3160";
     ctx.lineWidth = 0.65;
     for (const { corners, fill } of faces) {
       ctx.beginPath();
@@ -52,9 +52,9 @@ export function drawGgvSurface(canvas, slices, angle) {
       [project(-maxAy, maxAx, 0), "ax (g)"],
       [project(-maxAy, -maxAx, maxSpeed), `${Number(maxSpeed.toFixed(1))} km/h`],
     ];
-    ctx.font = "12px system-ui";
-    ctx.strokeStyle = "#b7c7d5";
-    ctx.fillStyle = "#e9edf2";
+    ctx.font = '12px "Segoe UI", sans-serif';
+    ctx.strokeStyle = "#475569";
+    ctx.fillStyle = "#142638";
     ctx.lineWidth = 1.25;
     for (const [[x, y], label] of axes) {
       ctx.beginPath();

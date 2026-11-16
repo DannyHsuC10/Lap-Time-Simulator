@@ -9,6 +9,7 @@ from zipfile import BadZipFile
 
 import numpy as np
 
+from .localization import localize
 from .settings import Settings
 
 
@@ -17,9 +18,9 @@ def read_tire_json(path: str | Path) -> dict:
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig"))
         if not isinstance(data, dict):
-            raise ValueError("JSON 須包含一個係數物件。")
+            raise ValueError(localize("JSON 須包含一個係數物件。"))
     except (OSError, ValueError) as error:
-        raise ValueError(f"無法讀取輪胎 JSON {path.name}。{error}") from error
+        raise ValueError(localize("無法讀取輪胎 JSON {filename}。{error}", filename=path.name, error=error)) from error
     return data
 
 
@@ -142,7 +143,7 @@ class FrictionEllipse:
                 return cls(mu_x, mu_y, utilization=utilization)
         except OverflowError:
             pass
-        raise ValueError("摩擦橢圓 JSON 的 mu_x 與 mu_y 均須為有限的正數。")
+        raise ValueError(localize("摩擦橢圓 JSON 的 mu_x 與 mu_y 均須為有限的正數。"))
 
     def peak_forces(self, fz: float, camber_deg: float = 0.0) -> tuple[float, float]:
         return self.utilization * (self.mu_x * fz), self.utilization * (self.mu_y * fz)
@@ -181,29 +182,29 @@ class TabulatedTire:
             axes = (self.fz, self.fy_fraction)
             if any(axis.ndim != 1 or len(axis) < 2 or not np.isfinite(axis).all()
                    or np.any(np.diff(axis) <= 0) for axis in axes):
-                raise ValueError("Fz 或 Fy 取樣軸無效")
+                raise ValueError(localize("Fz 或 Fy 取樣軸無效"))
             if self.fz[0] <= 0 or self.fy_fraction[0] != 0 or self.fy_fraction[-1] != 1:
-                raise ValueError("Fz 必須為正，Fy 比例範圍須為 0–1")
+                raise ValueError(localize("Fz 必須為正，Fy 比例範圍須為 0–1"))
             columns = (self.fy_min, self.fy_max, self.fy_pure, self.rrt)
             if any(column.shape != self.fz.shape or not np.isfinite(column).all() for column in columns):
-                raise ValueError("逐載重資料欄位無效")
+                raise ValueError(localize("逐載重資料欄位無效"))
             shape = (len(self.fz), len(self.fy_fraction))
             if any(table.shape != shape or not np.isfinite(table).all() for table in (self.brake, self.drive)):
-                raise ValueError("Fx 資料表尺寸或數值無效")
+                raise ValueError(localize("Fx 資料表尺寸或數值無效"))
             if np.any(self.fy_min >= 0) or np.any(self.fy_max <= 0) or np.any(self.fy_pure <= 0):
-                raise ValueError("Fy 極限無效")
+                raise ValueError(localize("Fy 極限無效"))
             if np.any(self.brake > self.drive) or np.any(self.rrt < 0):
-                raise ValueError("Fx 邊界或滾阻扭矩無效")
+                raise ValueError(localize("Fx 邊界或滾阻扭矩無效"))
             if self.slip_grids is not None:
                 slip_axes = (self.slip_angles, self.slip_ratios)
                 if any(axis.ndim != 1 or len(axis) < 2 or not np.isfinite(axis).all()
                        or np.any(np.diff(axis) <= 0) for axis in slip_axes):
-                    raise ValueError("滑移資料取樣軸無效")
+                    raise ValueError(localize("滑移資料取樣軸無效"))
                 shape = (len(self.fz), len(self.slip_angles), len(self.slip_ratios))
                 if any(grid.shape != shape or not np.isfinite(grid).all() for grid in self.slip_grids):
-                    raise ValueError("滑移力或力矩資料無效")
+                    raise ValueError(localize("滑移力或力矩資料無效"))
         except (KeyError, ValueError, TypeError, OSError, EOFError, BadZipFile) as error:
-            raise ValueError(f"無法讀取輪胎力資料表 {path.name}。{error}") from error
+            raise ValueError(localize("無法讀取輪胎力資料表 {filename}。{error}", filename=path.name, error=error)) from error
         self.fz_range = (float(self.fz[0]), float(self.fz[-1]))
 
     def peak_forces(self, fz: float, camber_deg: float = 0.0) -> tuple[float, float]:

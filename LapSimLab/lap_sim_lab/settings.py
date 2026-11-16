@@ -3,6 +3,8 @@ from decimal import Decimal, DecimalException
 import math
 from pathlib import Path
 
+from .localization import localize
+
 
 INPUT_DIR = Path(__file__).resolve().parents[1] / "input_data"
 DEFAULT_ELLIPSE_PATH = INPUT_DIR / "friction_ellipse.json"
@@ -103,12 +105,12 @@ class Settings:
     def validate(self):
         for key, (label, choices) in MODEL_CHOICES.items():
             if getattr(self, key) not in choices:
-                raise ValueError(f"無法辨識「{label}」的選項。")
+                raise ValueError(localize("無法辨識「{label}」的選項。", label=localize(label)))
         if self.load_model == "point_mass" and self.yaw_correction:
-            raise ValueError("偏航慣量修正需要逐輪輪載。")
+            raise ValueError(localize("偏航慣量修正需要逐輪輪載。"))
         for name, label in POSITIVE_FIELDS:
             if not math.isfinite(value := getattr(self, name)) or value <= 0:
-                raise ValueError(f"{label}須為有限的正數。")
+                raise ValueError(localize("{label}須為有限的正數。", label=localize(label)))
         for name, label in (
             ("cg_height", "重心高度"),
             ("pedal_force", "踏板力"),
@@ -117,28 +119,28 @@ class Settings:
             ("time_limit_s", "計算時間上限"),
         ):
             if not math.isfinite(value := getattr(self, name)) or value < 0:
-                raise ValueError(f"{label}須為有限的非負數。")
+                raise ValueError(localize("{label}須為有限的非負數。", label=localize(label)))
         if self.tire_model != "table" and (not math.isfinite(self.rolling_coefficient) or self.rolling_coefficient < 0):
-            raise ValueError("固定滾阻係數須為有限的非負數。")
+            raise ValueError(localize("固定滾阻係數須為有限的非負數。"))
         if self.load_model != "point_mass" and not 0 < self.cg_from_front < self.wheelbase:
-            raise ValueError("重心距前軸須大於零且小於軸距。")
+            raise ValueError(localize("重心距前軸須大於零且小於軸距。"))
         if not 0 < self.safety_factor <= 1:
-            raise ValueError("側向安全係數須大於零且不超過 1。")
+            raise ValueError(localize("側向安全係數須大於零且不超過 1。"))
         if not 0 <= self.gear_efficiency <= 1:
-            raise ValueError("傳動效率須介於 0% 和 100%。")
+            raise ValueError(localize("傳動效率須介於 0% 和 100%。"))
         for name, label in (
             ("front_torque_scale", "前輪限扭比例"),
             ("rear_torque_scale", "後輪限扭比例"),
             ("front_brake_bias", "前軸煞車比例"),
         ):
             if not 0 <= getattr(self, name) <= 1:
-                raise ValueError(f"{label}須介於 0 和 1。")
+                raise ValueError(localize("{label}須介於 0 和 1。", label=localize(label)))
         if type(self.passes) is not int or not 1 <= self.passes <= 30:
-            raise ValueError("前後向掃描次數須為 1 到 30 的整數。")
+            raise ValueError(localize("前後向掃描次數須為 1 到 30 的整數。"))
         if self.solver == "distance" and self.initial_speed > self.max_speed:
-            raise ValueError("起始車速不得超過速度上限。")
+            raise ValueError(localize("起始車速不得超過速度上限。"))
         if any(type(count) is not int or count <= 0 for count in (self.front_pistons, self.rear_pistons)):
-            raise ValueError("卡鉗活塞數須為正整數。")
+            raise ValueError(localize("卡鉗活塞數須為正整數。"))
 
 
 POSITIVE_FIELDS = (

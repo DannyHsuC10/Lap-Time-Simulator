@@ -4,9 +4,12 @@ from dataclasses import replace
 import json
 from pathlib import Path
 
+from english import ENGLISH
+
 from lap_sim_lab.analysis import AttitudeSweep, sweep_aero, sweep_tires
 from lap_sim_lab.car import Car
 from lap_sim_lab.ggv import build_ggv
+from lap_sim_lab.localization import use_translations
 from lap_sim_lab.planner import GRAVITY
 from lap_sim_lab.settings import Settings
 from lap_sim_lab.simulation import simulate, write_csv
@@ -18,6 +21,7 @@ def read_settings(values_json, files_json):
     return replace(Settings(), **values, **paths)
 
 
+@use_translations(ENGLISH)
 def run_lap(settings, progress):
     result = simulate(settings, progress)
     track, plan = result.track, result.plan
@@ -39,6 +43,7 @@ def run_lap(settings, progress):
     return result, json.dumps(output, ensure_ascii=False, allow_nan=False)
 
 
+@use_translations(ENGLISH)
 def inspect_curve(tool, values_json, files_json, conditions_json):
     settings = read_settings(values_json, files_json)
     settings.validate()
@@ -65,7 +70,7 @@ def inspect_curve(tool, values_json, files_json, conditions_json):
                        "brake": result.fx_brake.tolist(), "failures": int((~result.feasible).sum()),
                        "ay": sweep.ay_g}
         else:
-            raise ValueError(f"無法辨識曲線工具「{tool}」。")
+            raise ValueError(f"Unknown curve tool {tool}.")
     return json.dumps(payload, ensure_ascii=False, allow_nan=False)
 
 

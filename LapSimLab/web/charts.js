@@ -1,4 +1,15 @@
-const trackHue = 230;
+const trackColors = [[20, 38, 56], [7, 109, 100], [37, 130, 138], [152, 102, 25]];
+
+export const trackGradient = `linear-gradient(to right, ${trackColors.map((color) => `rgb(${color.join(" ")})`).join(", ")})`;
+
+function trackColor(fraction) {
+  const position = Math.max(0, Math.min(1, fraction)) * (trackColors.length - 1);
+  const index = Math.min(Math.floor(position), trackColors.length - 2);
+  const start = trackColors[index];
+  const end = trackColors[index + 1];
+  const channels = start.map((channel, i) => Math.round(channel + (end[i] - channel) * (position - index)));
+  return `rgb(${channels.join(" ")})`;
+}
 
 export function bounds(values) {
   let min = Infinity;
@@ -13,10 +24,10 @@ export function bounds(values) {
 function drawMarker(ctx, x, y) {
   ctx.beginPath();
   ctx.arc(x, y, 5, 0, 2 * Math.PI);
-  ctx.fillStyle = "#f5f8fc";
+  ctx.fillStyle = "#fff";
   ctx.fill();
   ctx.lineWidth = 2;
-  ctx.strokeStyle = "#111b25";
+  ctx.strokeStyle = "#142638";
   ctx.stroke();
 }
 
@@ -31,7 +42,7 @@ function drawTrack(ctx, width, height, result, values, sample) {
   ctx.lineWidth = 4;
   for (let index = 1; index < values.length; index++) {
     const fraction = max === min ? 0 : ((values[index] + values[index - 1]) / 2 - min) / (max - min);
-    ctx.strokeStyle = `hsl(${trackHue * (1 - fraction)} 86% 64%)`;
+    ctx.strokeStyle = trackColor(fraction);
     ctx.beginPath();
     ctx.moveTo(x(index - 1), y(index - 1));
     ctx.lineTo(x(index), y(index));
@@ -44,7 +55,7 @@ function tick(value) {
   return Number(value.toPrecision(4)).toString();
 }
 
-export const lineColors = ["#75e5ce", "#ffaf73", "#91b7ff", "#e5a1ff", "#f7df77"];
+export const lineColors = ["#076d64", "#a65a2b", "#285f99", "#79438e", "#85630d"];
 
 function drawSeries(ctx, width, height, series, xUnit, yUnit, sample) {
   const [low, high] = bounds(series.flatMap(({ values }) => values));
@@ -58,12 +69,12 @@ function drawSeries(ctx, width, height, series, xUnit, yUnit, sample) {
   const right = width - 22;
   const x = (value) => left + (value - xStart) / (xEnd - xStart || 1) * (right - left);
   const y = (value) => bottom - (value - min) / (max - min) * (bottom - top);
-  ctx.font = "11px system-ui";
-  ctx.fillStyle = "#a7b7c5";
+  ctx.font = '11px "Segoe UI", sans-serif';
+  ctx.fillStyle = "#475569";
   ctx.fillText(yUnit, 11, 17);
   ctx.textAlign = "right";
   ctx.fillText(xUnit, right, height - 8);
-  ctx.strokeStyle = "#344554";
+  ctx.strokeStyle = "#d4dfe9";
   ctx.lineWidth = 1;
   const columns = width < 420 ? 3 : 5;
   for (let index = 0; index <= columns; index++) {

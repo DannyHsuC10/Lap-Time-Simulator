@@ -7,6 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .localization import localize
+
 
 MAX_SAMPLES = 25_000
 REQUIRED_COLUMNS = {"section", "Type", "Start_X", "Start_Y", "End_X", "End_Y", "length"}
@@ -44,24 +46,27 @@ def read_sections(path: Path, width: float, step: float, *, check_deadline=None)
     with path.open(encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)
         if not REQUIRED_COLUMNS.issubset(reader.fieldnames or ()):
-            raise ValueError(f"{path.name} 缺少 LINE／ARC 分段賽道的必要欄位。")
+            raise ValueError(localize("{filename} 缺少 LINE／ARC 分段賽道的必要欄位。", filename=path.name))
         for row in reader:
             if check_deadline is not None:
                 check_deadline()
             try:
                 length = number(row, "length")
                 if length <= 0:
-                    raise ValueError("分段長度須大於零")
+                    raise ValueError(localize("分段長度須大於零"))
                 intervals = length / step
                 if intervals > MAX_SAMPLES or sample_count + math.ceil(intervals) > MAX_SAMPLES:
-                    raise ValueError(f"取樣點超過 {MAX_SAMPLES:,}，請增大取樣間距")
+                    raise ValueError(localize("取樣點超過 {maximum:,}，請增大取樣間距", maximum=MAX_SAMPLES))
                 count = max(math.ceil(intervals), 1) + 1
                 sections.append(section_geometry(row, count, width, length))
                 sample_count += count - 1
             except (KeyError, ValueError) as exc:
-                raise ValueError(f"{path.name} 第 {reader.line_num} 列：{exc}") from exc
+                raise ValueError(localize(
+                    "{filename} 第 {line_number} 列：{exc}",
+                    filename=path.name, line_number=reader.line_num, exc=exc,
+                )) from exc
     if not sections:
-        raise ValueError(f"{path.name} 沒有賽道分段。")
+        raise ValueError(localize("{filename} 沒有賽道分段。", filename=path.name))
     return sections
 
 
@@ -69,9 +74,9 @@ def number(row, key):
     try:
         value = float(row.get(key, ""))
     except (ValueError, TypeError) as exc:
-        raise ValueError(f"{key} 須為數字") from exc
+        raise ValueError(localize("{key} 須為數字", key=key)) from exc
     if not math.isfinite(value):
-        raise ValueError(f"{key} 須為有限值")
+        raise ValueError(localize("{key} 須為有限值", key=key))
     return value
 
 
@@ -81,7 +86,7 @@ def section_geometry(row, count, width, length):
     end_x, end_y = number(row, "End_X"), number(row, "End_Y")
     if kind == "LINE":
         if (start_x, start_y) == (end_x, end_y):
-            raise ValueError("直線起點與終點須不同")
+            raise ValueError(localize("直線起點與終點須不同"))
         x = np.linspace(start_x, end_x, count)
         y = np.linspace(start_y, end_y, count)
         curvature = 0.0
@@ -90,19 +95,19 @@ def section_geometry(row, count, width, length):
         radius = number(row, "Radius")
         direction = (row.get("Direction") or "").strip().lower()
         if radius <= 0 or direction not in ("clockwise", "counterclockwise"):
-            raise ValueError("圓弧須有正半徑及 Clockwise 或 Counterclockwise 方向")
+            raise ValueError(localize("圓弧須有正半徑及 Clockwise 或 Counterclockwise 方向"))
         start = np.deg2rad(number(row, "Start_Angle (deg)"))
         end = np.deg2rad(number(row, "End_Angle (deg)"))
         sign = -1 if direction == "clockwise" else 1
         delta = sign * ((sign * (end - start)) % (2.0 * np.pi))
         if delta == 0:
-            raise ValueError("圓弧角度跨度須大於零，整圓可拆成多段")
+            raise ValueError(localize("圓弧角度跨度須大於零，整圓可拆成多段"))
         angle = start + np.linspace(0.0, delta, count)
         x = center_x + radius * np.cos(angle)
         y = center_y + radius * np.sin(angle)
         curvature = sign / radius
     else:
-        raise ValueError("Type 須為 LINE 或 ARC")
+        raise ValueError(localize("Type 須為 LINE 或 ARC"))
 
     dx, dy = np.gradient(x), np.gradient(y)
     norm = np.maximum(np.hypot(dx, dy), 1e-12)

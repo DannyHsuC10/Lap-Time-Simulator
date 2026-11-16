@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .localization import localize
 from .planner import BRAKING_SPEED_TOLERANCE, GRAVITY, camber_from_roll
 from .tire import TabulatedTire
 
@@ -52,9 +53,10 @@ def build_signals(track, plan, time, limits, power, *, check_deadline=None):
     signals = {}
 
     def add(key, label, unit, values):
-        signals[key] = Signal(label, unit, values)
+        signals[key] = Signal(localize(label), localize(unit), values)
 
     def add_wheels(key, label, unit, suffix, values):
+        label = localize(label)
         for wheel, column in zip(("FL", "FR", "RL", "RR"), values.T):
             add(f"{key}_{wheel}_{suffix}", f"{label} {wheel}", unit, column)
 
@@ -124,8 +126,8 @@ def build_signals(track, plan, time, limits, power, *, check_deadline=None):
     add("heave_mm", "整車升沉（向下為正）", "mm", plan.heave * 1000)
     for index, (axis, label) in enumerate((("roll", "側傾"), ("pitch", "俯仰"), ("yaw", "航向"))):
         add(f"{axis}_deg", label, "deg", np.degrees(theta[:, index]))
-        add(f"{axis}_rate_rad_s", f"{label}角速度", "rad/s", omega[:, index])
-        add(f"{axis}_accel_rad_s2", f"{label}角加速度", "rad/s²", alpha[:, index])
+        add(f"{axis}_rate_rad_s", localize("{label}角速度", label=localize(label)), "rad/s", omega[:, index])
+        add(f"{axis}_accel_rad_s2", localize("{label}角加速度", label=localize(label)), "rad/s²", alpha[:, index])
     add("vx_m_s", "車身縱向速度", "m/s", plan.speed)
     add("vz_m_s", "車身垂直速度", "m/s", body_vz)
     add("ax_m_s2", "車身縱向加速度", "m/s²", plan.acceleration)
@@ -187,7 +189,7 @@ def build_signals(track, plan, time, limits, power, *, check_deadline=None):
     add("CL", "升力係數 CL", "無因次", plan.cl)
     add("CD", "阻力係數 CD", "無因次", plan.cd)
     for axis, values in zip("xyz", plan.cop.T):
-        add(f"cop_{axis}_m", f"空力中心 {axis.upper()}", "m", values)
+        add(f"cop_{axis}_m", localize("空力中心 {axis}", axis=axis.upper()), "m", values)
     relative_travel = (zs - zu) * 1000
     if point_mass:
         relative_travel.fill(0.0)

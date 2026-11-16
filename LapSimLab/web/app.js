@@ -1,4 +1,4 @@
-import { bounds, drawChart } from "./charts.js";
+import { bounds, drawChart, trackGradient } from "./charts.js";
 import { installCurveTools } from "./curves.js";
 
 const byId = (id) => document.getElementById(id);
@@ -13,6 +13,7 @@ const signal = byId("signal");
 const view = byId("view");
 const sample = byId("sample");
 const canvas = byId("chart");
+byId("legend").querySelector(".gradient").style.background = trackGradient;
 const conditionalFields = Array.from(fields.querySelectorAll("[data-show]"), (row) => ({
   row,
   field: row.querySelector("input, select"),
@@ -53,7 +54,7 @@ function updateInputs() {
   }
   for (const [key, { input, hint, clear, example }] of fileRows) {
     const selected = input.files[0];
-    hint.textContent = selected ? "本機自訂檔案" : `使用內建資料 ${schema.files[key]}`;
+    hint.textContent = selected ? selected.name : `Using built-in data ${schema.files[key]}`;
     clear.hidden = !selected;
     const filename = key === "aero_path" && form.elements.aero_model.value === "quadratic" ?
       schema.quadraticAeroExample : schema.files[key];
@@ -68,22 +69,30 @@ function setupFileRows() {
     const row = input.closest(".file-input");
     const hint = document.createElement("small");
     hint.id = `${key}-hint`;
-    input.setAttribute("aria-describedby", hint.id);
+    hint.setAttribute("aria-live", "polite");
     const actions = document.createElement("div");
     actions.className = "file-tools";
+    const choose = document.createElement("button");
+    choose.type = "button";
+    choose.className = "secondary";
+    choose.textContent = "Choose File";
+    choose.setAttribute("aria-label", `Choose File for ${input.labels[0].textContent.trim()}`);
+    choose.setAttribute("aria-describedby", hint.id);
+    choose.addEventListener("click", () => input.click());
+    input.hidden = true;
     const example = document.createElement("a");
-    example.textContent = "下載範例";
+    example.textContent = "Download Example";
     const clear = document.createElement("button");
     clear.type = "button";
     clear.className = "secondary";
-    clear.textContent = "使用內建資料";
+    clear.textContent = "Use Built-In Data";
     clear.addEventListener("click", () => {
       input.value = "";
       input.dispatchEvent(new Event("change", { bubbles: true }));
-      input.focus();
+      choose.focus();
     });
-    actions.append(example, clear);
-    row.append(hint, actions);
+    actions.append(choose, example, clear);
+    row.append(actions, hint);
     fileRows.set(key, { input, hint, clear, example });
   }
 }
@@ -127,7 +136,7 @@ function drawResult() {
   byId("legend-min").textContent = `${min.toFixed(2)} ${entry.unit}`;
   byId("legend-max").textContent = `${max.toFixed(2)} ${entry.unit}`;
   byId("sample-value").textContent = `${result.distance[index].toFixed(1)} m · ${result.time[index].toFixed(2)} s · ${entry.label} ${entry.values[index].toFixed(2)} ${entry.unit}`;
-  canvas.setAttribute("aria-label", `${view.selectedOptions[0].textContent}圖，${entry.label}（${entry.unit}）`);
+  canvas.setAttribute("aria-label", `${view.selectedOptions[0].textContent} chart, ${entry.label} (${entry.unit})`);
   drawChart(canvas, result, view.value, entry, index);
 }
 
@@ -139,13 +148,13 @@ function showResult(data, trackName) {
   byId("track-length").value = data.distance.at(-1).toFixed(1);
   byId("peak-lateral").value = data.peakLateral.toFixed(2);
   const warnings = [];
-  if (data.converged === false) warnings.push("全圈迭代已達掃描次數上限，速度尚未收斂。");
-  if (data.overspeedPoints) warnings.push(`${data.overspeedPoints} 個取樣點超過側向速度上限。`);
+  if (data.converged === false) warnings.push("The lap solver reached the pass limit before the speed profile converged.");
+  if (data.overspeedPoints) warnings.push(`${data.overspeedPoints} samples exceed the cornering speed limit.`);
   byId("warning").textContent = warnings.join(" ");
   byId("warning").hidden = !warnings.length;
   const previousSignal = signal.value || "speed_kmh";
   signal.replaceChildren(...Object.entries(data.signals).map(([key, entry]) =>
-    new Option(`${entry.label}（${entry.unit}）`, key)));
+    new Option(`${entry.label} (${entry.unit})`, key)));
   signal.value = data.signals[previousSignal] ? previousSignal : "speed_kmh";
   sample.max = data.distance.length - 1;
   sample.value = 0;
@@ -176,18 +185,18 @@ function getWorker(inspect = false) {
         break;
       case "result":
         showResult(data.result, data.trackName);
-        setStatus("圈速計算完成。");
+        setStatus("Lap calculation complete.");
         setJob();
         break;
       case "inspection":
         setJob();
         curves.receive(data.tool, data.result, data.fileName);
-        setStatus(data.tool === "ggv" ? "GGV 計算完成。" : "曲線已更新。");
+        setStatus(data.tool === "ggv" ? "GGV calculation complete." : "Plot updated.");
         break;
       case "csv":
         downloadCsv(data.contents);
         setJob();
-        setStatus("CSV 已產生。");
+        setStatus("CSV ready.");
         break;
       case "error":
         setStatus(data.message, true);
@@ -202,7 +211,7 @@ function getWorker(inspect = false) {
       worker = undefined;
       clearResult();
     }
-    setStatus("求解器中斷，請重試。", true);
+    setStatus("The solver stopped unexpectedly. Try again.", true);
     setJob();
   };
   return created;
@@ -222,7 +231,7 @@ function readInputs(tool) {
         field.closest("details").open = true;
         if (included) {
           const label = field.labels[0].textContent.trim();
-          curves.status(tool, `請關閉視窗並檢查左側「${label}」的設定。`, true);
+          curves.status(tool, `Close this window and check the ${label} settings in the input panel.`, true);
         } else {
           field.reportValidity();
         }
@@ -243,7 +252,7 @@ function startInspection(tool, conditions) {
   const inputs = readInputs(tool);
   if (!inputs) return;
   setJob("inspect", tool);
-  setStatus("準備計算…");
+  setStatus("Preparing calculation…");
   getWorker(true).postMessage({ type: "inspect", tool, conditions, ...inputs });
 }
 
@@ -258,7 +267,7 @@ form.addEventListener("submit", (event) => {
   curves.select("lap");
   clearResult();
   setJob("run");
-  setStatus("準備計算…");
+  setStatus("Preparing calculation…");
   getWorker().postMessage({ type: "run", ...inputs });
 });
 
@@ -267,7 +276,7 @@ form.addEventListener("reset", (event) => {
   restoreDefaults();
   curves.invalidate();
   clearResult();
-  setStatus("已恢復預設設定。");
+  setStatus("Default settings restored.");
 });
 function cancelJob() {
   if (job === "inspect") {
@@ -277,20 +286,20 @@ function cancelJob() {
     worker.terminate();
     worker = undefined;
   }
-  setStatus("已取消計算。");
+  setStatus("Calculation canceled.");
   setJob();
 }
 cancel.addEventListener("click", cancelJob);
 byId("ggv-cancel").addEventListener("click", cancelJob);
 download.addEventListener("click", () => {
   setJob("export");
-  setStatus("正在產生 CSV…");
+  setStatus("Generating CSV…");
   getWorker().postMessage({ type: "export" });
 });
 form.addEventListener("change", () => {
   updateInputs();
   curves.invalidate();
-  if (result && !run.disabled) setStatus("設定已變更，請重新計算以更新結果。");
+  if (result && !run.disabled) setStatus("Settings changed. Run the calculation again to update the results.");
 });
 for (const input of [signal, view, sample]) input.addEventListener("input", drawResult);
 new ResizeObserver(drawResult).observe(canvas);
@@ -305,7 +314,7 @@ async function initialize() {
   setupFileRows();
   restoreDefaults();
   setJob();
-  setStatus("可以開始計算圈速。");
+  setStatus("Ready to calculate lap time.");
 }
 
-initialize().catch((error) => setStatus(`無法載入模擬設定（${error.message}）。`, true));
+initialize().catch((error) => setStatus(`Could not load the simulation settings (${error.message}).`, true));

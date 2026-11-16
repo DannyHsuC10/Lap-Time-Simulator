@@ -9,6 +9,7 @@ import numpy as np
 
 from .brake import brake as brake_torque, hydraulic_brake
 from .car import Car
+from .localization import localize
 from .motor import Throttle_command
 from .suspension import wheel_load_stiffness
 from .tire import FrictionEllipse, TabulatedTire, TireEnvelope
@@ -426,7 +427,7 @@ def build_friction_limited_speed_plan(
     """
 
     report = progress or (lambda message: None)
-    report("計算側向抓地速度上限")
+    report(localize("計算側向抓地速度上限"))
     lateral_speed_limit = build_aero_lateral_speed_profile(
         track=track,
         tire_limit_map=tire_limit_map,
@@ -441,7 +442,7 @@ def build_friction_limited_speed_plan(
             track, lateral_speed_limit, tire_limit_map, check_deadline=check_deadline,
         )
     if settings.solver == "distance":
-        report("沿距離向前積分")
+        report(localize("沿距離向前積分"))
         speed = integrate_forward(
             track, lateral_speed_limit, tire_limit_map, power_brake_limit, settings.initial_speed,
             check_deadline=check_deadline,
@@ -532,7 +533,10 @@ def iterate_lap(track, lateral_speed_limit, tire_limit_map, power_brake_limit, p
     total_passes = max(int(passes), 1)
     for pass_index in range(total_passes):
         speed_before_pass = speed.copy()
-        report(f"第 {pass_index + 1}/{total_passes} 輪，向前掃描加速限制")
+        report(localize(
+            "第 {pass_number}/{total_passes} 輪，向前掃描加速限制",
+            pass_number=pass_index + 1, total_passes=total_passes,
+        ))
         for index in range(len(speed) - 1):
             if check_deadline is not None:
                 check_deadline()
@@ -546,7 +550,10 @@ def iterate_lap(track, lateral_speed_limit, tire_limit_map, power_brake_limit, p
             reachable = np.sqrt(max(speed[index] ** 2 + 2.0 * accel * ds, 0.0))
             speed[index + 1] = min(speed[index + 1], reachable)
 
-        report(f"第 {pass_index + 1}/{total_passes} 輪，向後掃描煞車限制")
+        report(localize(
+            "第 {pass_number}/{total_passes} 輪，向後掃描煞車限制",
+            pass_number=pass_index + 1, total_passes=total_passes,
+        ))
         for index in range(len(speed) - 2, -1, -1):
             if check_deadline is not None:
                 check_deadline()
@@ -575,7 +582,7 @@ def summarize_plan(track, speed, lateral_speed_limit, tire_limit_map, report, pa
     phase = np.full(len(speed), "hold", dtype=object)
     phase[acceleration > 0.05] = "accelerate"
     phase[acceleration < -0.05] = "brake"
-    report("整理四輪輪荷與車身姿態")
+    report(localize("整理四輪輪荷與車身姿態"))
     wheel_states = []
     for v, ax, kappa in zip(speed, acceleration, track.curvature):
         if check_deadline is not None:

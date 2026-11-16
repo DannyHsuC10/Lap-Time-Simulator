@@ -1,198 +1,198 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LapSimLab 圈速模擬</title>
+  <title>LapSimLab — Lap Time Simulation</title>
   <link rel="stylesheet" href="./style.css">
   <script type="module" src="./app.js"></script>
 </head>
 <body>
   <header class="masthead">
-    <div class="shell heading">
-      <span class="brand">LapSimLab</span>
-      <h1>圈速模擬</h1>
+    <div class="shell">
+      <h1>LapSimLab</h1>
+      <p class="tagline">Lap Time Simulation</p>
     </div>
   </header>
   <main class="shell workspace">
     <section class="panel setup" aria-labelledby="inputs-title">
-      <h2 id="inputs-title">模擬輸入</h2>
+      <h2 id="inputs-title">Simulation Inputs</h2>
       <form id="settings" novalidate>
         <fieldset id="fields" disabled>
           <div class="settings-sections">
             <details>
-              <summary>輪胎</summary>
+              <summary>Tires</summary>
               <div class="settings-grid">
-                <label class="wide">輪胎模型<select name="tire_model"></select></label>
+                <label class="wide">Tire Model<select name="tire_model"></select></label>
                 <div class="file-input wide" data-show="tire_model=superellipse">
-                  <label>輪胎係數<input name="tire_path" type="file" accept=".json"></label>
+                  <label>Tire Coefficients<input name="tire_path" type="file" accept=".json"></label>
                 </div>
                 <div class="file-input wide" data-show="tire_model=ellipse" hidden>
-                  <label>摩擦橢圓 JSON<input name="ellipse_path" type="file" accept=".json"></label>
+                  <label>Friction Ellipse JSON<input name="ellipse_path" type="file" accept=".json"></label>
                 </div>
                 <div class="file-input wide" data-show="tire_model=table" hidden>
-                  <label>輪胎力資料表<input name="tire_table_path" type="file" accept=".npz"></label>
+                  <label>Tire Force Table<input name="tire_table_path" type="file" accept=".npz"></label>
                 </div>
-                <label>自由半徑（m）<input name="tire_radius" type="number" step="any" required></label>
-                <label data-show="tire_model=superellipse,ellipse">固定滾阻係數<input name="rolling_coefficient" type="number" min="0" step="any" required></label>
-                <small class="wide" data-show="tire_model=table" hidden>滾動阻力隨 Pacejka 查表。</small>
-                <button type="button" class="secondary wide tool-shortcut" data-tool="tire" aria-haspopup="dialog" aria-controls="curve-dialog">輪胎力掃描</button>
+                <label>Free Radius (m)<input name="tire_radius" type="number" step="any" required></label>
+                <label data-show="tire_model=superellipse,ellipse">Fixed Rolling Resistance Coefficient<input name="rolling_coefficient" type="number" min="0" step="any" required></label>
+                <small class="wide" data-show="tire_model=table" hidden>Rolling resistance comes from the Pacejka table.</small>
+                <button type="button" class="secondary wide tool-shortcut" data-tool="tire" aria-haspopup="dialog" aria-controls="curve-dialog">Tire Force Sweep</button>
               </div>
             </details>
             <details>
-              <summary>懸吊與車體</summary>
+              <summary>Suspension and Body</summary>
               <div class="settings-grid">
-                <label class="wide">輪載與姿態<select name="load_model"></select></label>
-                <label>總質量（kg，含車手）<input name="mass" type="number" step="any" required></label>
-                <label>輪胎使用率（%）<input name="tire_utilization" type="number" min="0" step="any" required></label>
-                <label data-show="load_model=compliant">軸距（m）<input name="wheelbase" type="number" step="any" required></label>
-                <label data-show="load_model=compliant">重心距前軸（m）<input name="cg_from_front" type="number" step="any" required></label>
-                <label data-show="load_model=compliant">重心高度（m）<input name="cg_height" type="number" min="0" step="any" required></label>
-                <label data-show="load_model=compliant">前輪距（m）<input name="front_track" type="number" step="any" required></label>
-                <label data-show="load_model=compliant">後輪距（m）<input name="rear_track" type="number" step="any" required></label>
-                <label data-show="load_model=compliant">前軸升沉剛性（N/m）<input name="front_heave_stiffness" type="number" step="any" required></label>
-                <label data-show="load_model=compliant">前軸側傾剛性（N/m／輪）<input name="front_roll_stiffness" type="number" step="any" required></label>
-                <label data-show="load_model=compliant">後／前剛性比<input name="rear_stiffness_ratio" type="number" step="any" required></label>
-                <label data-show="load_model=compliant">輪胎垂直剛性（N/m）<input name="tire_stiffness" type="number" step="any" required></label>
-                <label class="wide check" data-show="load_model=compliant"><input name="yaw_correction" type="checkbox">啟用偏航慣量修正</label>
-                <label data-show="load_model=compliant yaw_correction=true" hidden>偏航慣量（kg·m²）<input name="yaw_inertia" type="number" step="any" required></label>
+                <label class="wide">Wheel Loads and Body Attitude<select name="load_model"></select></label>
+                <label>Total Mass with Driver (kg)<input name="mass" type="number" step="any" required></label>
+                <label>Tire Utilization (%)<input name="tire_utilization" type="number" min="0" step="any" required></label>
+                <label data-show="load_model=compliant">Wheelbase (m)<input name="wheelbase" type="number" step="any" required></label>
+                <label data-show="load_model=compliant">CG to Front Axle (m)<input name="cg_from_front" type="number" step="any" required></label>
+                <label data-show="load_model=compliant">CG Height (m)<input name="cg_height" type="number" min="0" step="any" required></label>
+                <label data-show="load_model=compliant">Front Track Width (m)<input name="front_track" type="number" step="any" required></label>
+                <label data-show="load_model=compliant">Rear Track Width (m)<input name="rear_track" type="number" step="any" required></label>
+                <label data-show="load_model=compliant">Front Heave Stiffness (N/m)<input name="front_heave_stiffness" type="number" step="any" required></label>
+                <label data-show="load_model=compliant">Front Roll Stiffness (N/m per wheel)<input name="front_roll_stiffness" type="number" step="any" required></label>
+                <label data-show="load_model=compliant">Rear-to-Front Stiffness Ratio<input name="rear_stiffness_ratio" type="number" step="any" required></label>
+                <label data-show="load_model=compliant">Vertical Tire Stiffness (N/m)<input name="tire_stiffness" type="number" step="any" required></label>
+                <label class="wide check" data-show="load_model=compliant"><input name="yaw_correction" type="checkbox">Enable Yaw Inertia Correction</label>
+                <label data-show="load_model=compliant yaw_correction=true" hidden>Yaw Moment of Inertia (kg·m²)<input name="yaw_inertia" type="number" step="any" required></label>
               </div>
             </details>
             <details>
-              <summary>馬達</summary>
+              <summary>Motor</summary>
               <div class="settings-grid">
-                <label class="wide">馬達模型<select name="motor_model"></select></label>
+                <label class="wide">Motor Model<select name="motor_model"></select></label>
                 <div class="file-input wide" data-show="motor_model=curve">
-                  <label>馬達曲線<input name="motor_path" type="file" accept=".csv"></label>
+                  <label>Motor Curve<input name="motor_path" type="file" accept=".csv"></label>
                 </div>
                 <div class="file-input wide" data-show="motor_model=lp03" hidden>
-                  <label>LP03 電壓包絡<input name="lp03_path" type="file" accept=".csv"></label>
+                  <label>LP03 Voltage Envelope<input name="lp03_path" type="file" accept=".csv"></label>
                 </div>
-                <label data-show="motor_model=lp03" hidden>直流電壓（V）<input name="dc_voltage" type="number" step="any" required></label>
-                <label>固定減速比<input name="gear_ratio" type="number" step="any" required></label>
-                <label>傳動效率（%）<input name="gear_efficiency" type="number" min="0" max="100" step="any" required></label>
-                <label>前輪限扭比例（0–1）<input name="front_torque_scale" type="number" min="0" max="1" step="any" required></label>
-                <label>後輪限扭比例（0–1）<input name="rear_torque_scale" type="number" min="0" max="1" step="any" required></label>
-                <button type="button" class="secondary wide tool-shortcut" data-tool="motor" aria-haspopup="dialog" aria-controls="curve-dialog">馬達曲線</button>
+                <label data-show="motor_model=lp03" hidden>DC Voltage (V)<input name="dc_voltage" type="number" step="any" required></label>
+                <label>Fixed Gear Reduction Ratio<input name="gear_ratio" type="number" step="any" required></label>
+                <label>Drivetrain Efficiency (%)<input name="gear_efficiency" type="number" min="0" max="100" step="any" required></label>
+                <label>Front Torque Limit Factor (0–1)<input name="front_torque_scale" type="number" min="0" max="1" step="any" required></label>
+                <label>Rear Torque Limit Factor (0–1)<input name="rear_torque_scale" type="number" min="0" max="1" step="any" required></label>
+                <button type="button" class="secondary wide tool-shortcut" data-tool="motor" aria-haspopup="dialog" aria-controls="curve-dialog">Motor Curve</button>
               </div>
             </details>
             <details>
-              <summary>煞車</summary>
+              <summary>Brakes</summary>
               <div class="settings-grid">
-                <label class="wide">煞車模型<select name="brake_model"></select></label>
-                <label>前軸煞車比例（0–1）<input name="front_brake_bias" type="number" min="0" max="1" step="any" required></label>
-                <label>踏板力（N）<input name="pedal_force" type="number" min="0" step="any" required></label>
-                <label data-show="brake_model=leverage">機械利益<input name="brake_leverage" type="number" step="any" required></label>
-                <label data-show="brake_model=hydraulic" hidden>踏板比<input name="pedal_ratio" type="number" step="any" required></label>
-                <label data-show="brake_model=hydraulic" hidden>總泵直徑（m）<input name="master_diameter" type="number" step="any" required></label>
-                <label data-show="brake_model=hydraulic" hidden>前輪卡鉗活塞直徑（m）<input name="front_caliper_diameter" type="number" step="any" required></label>
-                <label data-show="brake_model=hydraulic" hidden>後輪卡鉗活塞直徑（m）<input name="rear_caliper_diameter" type="number" step="any" required></label>
-                <label data-show="brake_model=hydraulic" hidden>前輪活塞數（每輪）<input name="front_pistons" type="number" min="1" step="1" required></label>
-                <label data-show="brake_model=hydraulic" hidden>後輪活塞數（每輪）<input name="rear_pistons" type="number" min="1" step="1" required></label>
-                <label data-show="brake_model=hydraulic" hidden>有效碟盤直徑（m）<input name="disc_diameter" type="number" step="any" required></label>
-                <label data-show="brake_model=hydraulic" hidden>來令片摩擦係數<input name="pad_mu" type="number" step="any" required></label>
+                <label class="wide">Brake Model<select name="brake_model"></select></label>
+                <label>Front Brake Bias (0–1)<input name="front_brake_bias" type="number" min="0" max="1" step="any" required></label>
+                <label>Pedal Force (N)<input name="pedal_force" type="number" min="0" step="any" required></label>
+                <label data-show="brake_model=leverage">Mechanical Advantage<input name="brake_leverage" type="number" step="any" required></label>
+                <label data-show="brake_model=hydraulic" hidden>Pedal Ratio<input name="pedal_ratio" type="number" step="any" required></label>
+                <label data-show="brake_model=hydraulic" hidden>Master Cylinder Bore (m)<input name="master_diameter" type="number" step="any" required></label>
+                <label data-show="brake_model=hydraulic" hidden>Front Caliper Piston Diameter (m)<input name="front_caliper_diameter" type="number" step="any" required></label>
+                <label data-show="brake_model=hydraulic" hidden>Rear Caliper Piston Diameter (m)<input name="rear_caliper_diameter" type="number" step="any" required></label>
+                <label data-show="brake_model=hydraulic" hidden>Front Pistons per Wheel<input name="front_pistons" type="number" min="1" step="1" required></label>
+                <label data-show="brake_model=hydraulic" hidden>Rear Pistons per Wheel<input name="rear_pistons" type="number" min="1" step="1" required></label>
+                <label data-show="brake_model=hydraulic" hidden>Effective Disc Diameter (m)<input name="disc_diameter" type="number" step="any" required></label>
+                <label data-show="brake_model=hydraulic" hidden>Pad Friction Coefficient<input name="pad_mu" type="number" step="any" required></label>
               </div>
             </details>
             <details>
-              <summary>空力</summary>
+              <summary>Aerodynamics</summary>
               <div class="settings-grid">
-                <label class="wide check"><input name="aero_enabled" type="checkbox">啟用空力</label>
-                <label class="wide" data-show="aero_enabled=true">空力模型<select name="aero_model"></select></label>
+                <label class="wide check"><input name="aero_enabled" type="checkbox">Enable Aerodynamics</label>
+                <label class="wide" data-show="aero_enabled=true">Aerodynamic Model<select name="aero_model"></select></label>
                 <div class="file-input wide" data-show="aero_enabled=true">
-                  <label>空力係數<input name="aero_path" type="file" accept=".json"></label>
+                  <label>Aerodynamic Coefficients<input name="aero_path" type="file" accept=".json"></label>
                 </div>
-                <button type="button" class="secondary wide tool-shortcut" data-tool="aero" aria-haspopup="dialog" aria-controls="curve-dialog">空力掃描</button>
+                <button type="button" class="secondary wide tool-shortcut" data-tool="aero" aria-haspopup="dialog" aria-controls="curve-dialog">Aerodynamic Sweep</button>
               </div>
             </details>
             <details>
-              <summary>賽道</summary>
+              <summary>Track</summary>
               <div class="settings-grid">
-                <label class="wide">賽道曲率<select name="curvature_model"></select></label>
+                <label class="wide">Track Curvature<select name="curvature_model"></select></label>
                 <div class="file-input wide">
-                  <label>賽道分段 CSV<input name="track_path" type="file" accept=".csv"></label>
+                  <label>Track Segments CSV<input name="track_path" type="file" accept=".csv"></label>
                 </div>
-                <label data-show="curvature_model=smooth" hidden>曲率平滑尺度（m）<input name="curvature_sigma_m" type="number" step="any" required></label>
-                <label>賽道寬度（m）<input name="track_width" type="number" step="any" required></label>
-                <label>取樣間距（m）<input name="step_m" type="number" step="any" required></label>
+                <label data-show="curvature_model=smooth" hidden>Curvature Smoothing Scale (m)<input name="curvature_sigma_m" type="number" step="any" required></label>
+                <label>Track Width (m)<input name="track_width" type="number" step="any" required></label>
+                <label>Sample Spacing (m)<input name="step_m" type="number" step="any" required></label>
               </div>
             </details>
             <details>
-              <summary>圈速求解</summary>
+              <summary>Lap Solver</summary>
               <div class="settings-grid">
-                <label class="wide">求解方式<select name="solver"></select></label>
-                <label>速度上限（m/s）<input name="max_speed" type="number" step="any" required></label>
-                <label>計算時間上限（秒，0＝不限）<input name="time_limit_s" type="number" min="0" step="any" required></label>
-                <label>側向安全係數（0–1）<input name="safety_factor" type="number" max="1" step="any" required></label>
-                <label data-show="solver=lap">最大掃描次數<input name="passes" type="number" min="1" max="30" step="1" required></label>
-                <label data-show="solver=distance" hidden>起始車速（m/s）<input name="initial_speed" type="number" min="0" step="any" required></label>
-                <label class="wide check" data-show="solver=distance" hidden><input name="braking_lookahead" type="checkbox">使用單次煞車前瞻</label>
+                <label class="wide">Solver<select name="solver"></select></label>
+                <label>Speed Limit (m/s)<input name="max_speed" type="number" step="any" required></label>
+                <label>Calculation Time Limit (s, 0 = unlimited)<input name="time_limit_s" type="number" min="0" step="any" required></label>
+                <label>Lateral Safety Factor (0–1)<input name="safety_factor" type="number" max="1" step="any" required></label>
+                <label data-show="solver=lap">Maximum Passes<input name="passes" type="number" min="1" max="30" step="1" required></label>
+                <label data-show="solver=distance" hidden>Initial Speed (m/s)<input name="initial_speed" type="number" min="0" step="any" required></label>
+                <label class="wide check" data-show="solver=distance" hidden><input name="braking_lookahead" type="checkbox">Use a Single Braking Lookahead Pass</label>
               </div>
             </details>
           </div>
         </fieldset>
         <div class="actions">
-          <button type="submit" id="run" disabled>計算圈速</button>
-          <button type="button" class="secondary" id="cancel" hidden>取消</button>
-          <button type="reset" class="secondary" id="reset" disabled>恢復預設</button>
+          <button type="submit" id="run" disabled>Calculate Lap</button>
+          <button type="button" class="secondary" id="cancel" hidden>Cancel</button>
+          <button type="reset" class="secondary" id="reset" disabled>Restore Defaults</button>
         </div>
       </form>
-      <p id="status" role="status">載入模擬設定…</p>
+      <p id="status" role="status">Loading simulation settings…</p>
     </section>
-    <section class="panel results" aria-label="圈速結果與 GGV">
-      <nav class="tool-tabs" aria-label="結果檢視">
-        <button type="button" data-tool="lap" aria-pressed="true">圈速結果</button>
+    <section class="panel results" aria-label="Lap Results and GGV">
+      <nav class="tool-tabs" aria-label="Result Views">
+        <button type="button" data-tool="lap" aria-pressed="true">Lap Results</button>
         <button type="button" data-tool="ggv" aria-pressed="false" disabled>GGV</button>
       </nav>
       <div id="lap-panel">
       <div class="result-heading">
-        <h2 id="results-title">模擬結果</h2>
-        <button type="button" class="secondary" id="download" disabled>匯出 CSV</button>
+        <h2 id="results-title">Simulation Results</h2>
+        <button type="button" class="secondary" id="download" disabled>Export CSV</button>
       </div>
-      <div class="empty" id="empty">按「計算圈速」查看預估圈速與賽道逐點訊號。</div>
+      <div class="empty" id="empty">Select Calculate Lap to see the estimated lap time and per-sample signals.</div>
       <div id="result" hidden>
         <p id="result-track" class="track-name"></p>
         <dl class="metrics">
-          <div><dt>預估圈速</dt><dd><output id="lap-time"></output><span>秒</span></dd></div>
-          <div><dt>最高車速</dt><dd><output id="top-speed"></output><span>km/h</span></dd></div>
-          <div><dt>路徑長度</dt><dd><output id="track-length"></output><span>m</span></dd></div>
-          <div><dt>最大橫向加速度</dt><dd><output id="peak-lateral"></output><span>g</span></dd></div>
+          <div><dt>Estimated Lap Time</dt><dd><output id="lap-time"></output><span>s</span></dd></div>
+          <div><dt>Top Speed</dt><dd><output id="top-speed"></output><span>km/h</span></dd></div>
+          <div><dt>Path Length</dt><dd><output id="track-length"></output><span>m</span></dd></div>
+          <div><dt>Peak Lateral Acceleration</dt><dd><output id="peak-lateral"></output><span>g</span></dd></div>
         </dl>
         <p id="warning" hidden></p>
         <div class="chart-options">
-          <label>圖表
-            <select id="view"><option value="track">賽道</option><option value="distance">距離</option><option value="time">時間</option></select>
+          <label>Chart
+            <select id="view"><option value="track">Track</option><option value="distance">Distance</option><option value="time">Time</option></select>
           </label>
-          <label>訊號 <select id="signal"></select></label>
+          <label>Signal <select id="signal"></select></label>
         </div>
-        <canvas id="chart" role="img" aria-label="圈速訊號圖"></canvas>
+        <canvas id="chart" role="img" aria-label="Lap Signal Chart"></canvas>
         <div id="legend" class="legend"><span id="legend-min"></span><span class="gradient"></span><span id="legend-max"></span></div>
-        <label class="sample" for="sample">取樣點 <output id="sample-value"></output></label>
+        <label class="sample" for="sample">Sample <output id="sample-value"></output></label>
         <input id="sample" type="range" min="0" value="0">
       </div>
       </div>
       <section id="ggv-panel" aria-labelledby="ggv-title" hidden>
         <div class="result-heading">
-          <h2 id="ggv-title">GGV 加速度包絡</h2>
+          <h2 id="ggv-title">GGV Acceleration Envelope</h2>
           <div class="actions">
-            <button type="button" id="ggv-run" disabled>計算 GGV</button>
-            <button type="button" class="secondary" id="ggv-cancel" hidden>取消</button>
+            <button type="button" id="ggv-run" disabled>Calculate GGV</button>
+            <button type="button" class="secondary" id="ggv-cancel" hidden>Cancel</button>
           </div>
         </div>
         <div class="curve-controls">
-          <label>圖表<select id="ggv-view"><option value="surface">3D 曲面</option><option value="slice">2D 切片</option></select></label>
-          <label id="ggv-speed-label" hidden>車速<select id="ggv-speed"><option value="all">代表車速疊圖</option></select></label>
+          <label>Chart<select id="ggv-view"><option value="surface">3D Surface</option><option value="slice">2D Slices</option></select></label>
+          <label id="ggv-speed-label" hidden>Vehicle Speed<select id="ggv-speed"><option value="all">Representative Speeds</option></select></label>
         </div>
         <p id="ggv-status" class="curve-note" role="status"></p>
-        <div class="empty" id="ggv-empty">按「計算 GGV」查看車輛加速度包絡。</div>
+        <div class="empty" id="ggv-empty">Select Calculate GGV to see the vehicle acceleration envelope.</div>
         <div id="ggv-output" hidden>
-          <canvas id="ggv-chart" role="img" aria-label="GGV 加速度包絡"></canvas>
+          <canvas id="ggv-chart" role="img" aria-label="GGV Acceleration Envelope"></canvas>
           <div id="ggv-legend" class="curve-legend"></div>
           <div class="actions" id="ggv-rotation" hidden>
-            <button type="button" class="secondary" data-rotate="left" aria-label="向左旋轉">←</button>
-            <button type="button" class="secondary" data-rotate="right" aria-label="向右旋轉">→</button>
-            <button type="button" class="secondary" data-rotate="up" aria-label="抬高視角">↑</button>
-            <button type="button" class="secondary" data-rotate="down" aria-label="降低視角">↓</button>
-            <button type="button" class="secondary" data-rotate="reset">重設視角</button>
+            <button type="button" class="secondary" data-rotate="left" aria-label="Rotate Left">←</button>
+            <button type="button" class="secondary" data-rotate="right" aria-label="Rotate Right">→</button>
+            <button type="button" class="secondary" data-rotate="up" aria-label="Tilt Up">↑</button>
+            <button type="button" class="secondary" data-rotate="down" aria-label="Tilt Down">↓</button>
+            <button type="button" class="secondary" data-rotate="reset">Reset View</button>
           </div>
         </div>
       </section>
@@ -202,36 +202,36 @@
         <div class="result-heading">
           <h2 id="curves-title" tabindex="-1"></h2>
           <div class="actions">
-            <button type="submit" form="curve-form" id="curve-run">更新曲線</button>
-            <button type="button" class="secondary" id="curve-close" autofocus>關閉</button>
+            <button type="submit" form="curve-form" id="curve-run">Update Plot</button>
+            <button type="button" class="secondary" id="curve-close" autofocus>Close</button>
           </div>
         </div>
         <form id="curve-form">
-          <fieldset class="curve-controls" id="aero-controls" aria-label="空力掃描條件" hidden disabled>
-            <label>掃描軸<select name="axis"><option>Roll</option><option>Pitch</option></select></label>
-            <label>掃描幅度 ±（°）<input name="extent_deg" type="number" step="any" min="0" max="90" value="3" required></label>
-            <label>固定另一角（°）<input name="fixed_deg" type="number" step="any" min="-90" max="90" value="0" required></label>
-            <label>車速（km/h）<input name="speed_kmh" type="number" step="any" min="0" value="72" required></label>
-            <label>Heave（mm）<input name="heave_mm" type="number" step="any" value="0" required></label>
+          <fieldset class="curve-controls" id="aero-controls" aria-label="Aerodynamic Sweep Inputs" hidden disabled>
+            <label>Sweep Axis<select name="axis"><option>Roll</option><option>Pitch</option></select></label>
+            <label>Sweep Range ± (°)<input name="extent_deg" type="number" step="any" min="0" max="90" value="3" required></label>
+            <label>Other Angle (°)<input name="fixed_deg" type="number" step="any" min="-90" max="90" value="0" required></label>
+            <label>Vehicle Speed (km/h)<input name="speed_kmh" type="number" step="any" min="0" value="72" required></label>
+            <label>Heave (mm)<input name="heave_mm" type="number" step="any" value="0" required></label>
           </fieldset>
-          <fieldset class="curve-controls" id="tire-controls" aria-label="輪胎掃描條件" hidden disabled>
-            <label>Roll 幅度 ±（°）<input name="extent_deg" type="number" step="any" min="0" max="90" value="3" required></label>
-            <label>橫向加速度需求（g）<input name="ay_g" type="number" step="any" value="0" required></label>
+          <fieldset class="curve-controls" id="tire-controls" aria-label="Tire Sweep Inputs" hidden disabled>
+            <label>Roll Range ± (°)<input name="extent_deg" type="number" step="any" min="0" max="90" value="3" required></label>
+            <label>Lateral Acceleration Demand (g)<input name="ay_g" type="number" step="any" value="0" required></label>
           </fieldset>
         </form>
         <div class="curve-controls" id="aero-views" hidden>
-          <label>曲線<select id="aero-metric"><option value="forces">下壓力與阻力</option><option value="axles">前後軸下壓力</option><option value="coefficients">CL 與 CD</option></select></label>
+          <label>Curve<select id="aero-metric"><option value="forces">Downforce and Drag</option><option value="axles">Downforce by Axle</option><option value="coefficients">CL and CD</option></select></label>
         </div>
         <div class="curve-controls" id="tire-views" hidden>
-          <label>曲線<select id="tire-metric"><option value="peaks">側向峰值 Fy</option><option value="drive">驅動上限 Fx</option><option value="brake">煞車下限 Fx</option></select></label>
-          <label>輪胎<select id="tire-wheel"><option value="all">四輪合計</option><option value="0">FL</option><option value="1">FR</option><option value="2">RL</option><option value="3">RR</option></select></label>
+          <label>Curve<select id="tire-metric"><option value="peaks">Peak Lateral Force (Fy)</option><option value="drive">Drive Force Limit (Fx)</option><option value="brake">Braking Force Limit (Fx)</option></select></label>
+          <label>Tires<select id="tire-wheel"><option value="all">All Four Wheels</option><option value="0">FL</option><option value="1">FR</option><option value="2">RL</option><option value="3">RR</option></select></label>
         </div>
         <p id="curve-status" class="curve-note" role="status"></p>
-        <div class="empty" id="curve-empty">按上方按鈕產生圖表。</div>
+        <div class="empty" id="curve-empty">Select Update Plot to draw the chart.</div>
         <div id="curve-output" hidden>
-          <canvas id="curve-chart" role="img" aria-label="曲線圖"></canvas>
+          <canvas id="curve-chart" role="img" aria-label="Curve Chart"></canvas>
           <div id="curve-legend" class="curve-legend"></div>
-          <label class="sample" for="curve-sample">取樣點 <output id="curve-readout"></output></label>
+          <label class="sample" for="curve-sample">Sample <output id="curve-readout"></output></label>
           <input type="range" id="curve-sample" min="0" value="0">
         </div>
   </dialog>
