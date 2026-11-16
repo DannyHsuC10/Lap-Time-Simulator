@@ -126,13 +126,13 @@ python LapSimLab/web/build.py dist --serve
 
 ### 重建 Pacejka 包絡
 
-`Pacejka_tire_model/` 內附新版輪胎公式、候選 `.tir` 與力圖。LapSimLab 執行時以 `input_data/pacejka_envelope.npz` 插值。要從內附的 W8 力圖重建包絡，可在 `LapSimLab` 資料夾安裝 SciPy 後執行：
+`Pacejka_tire_model/` 提供新版輪胎公式與力圖。直接執行輪胎模型時，請使用本機的 `.tir` 參數檔。LapSimLab 執行時以 `input_data/pacejka_envelope.npz` 插值。要從內附的 W8 力圖重建包絡，可在 `LapSimLab` 資料夾安裝 SciPy 後執行：
 
 ```sh
 python tools/build_pacejka_envelope.py
 ```
 
-W8 力圖取自 `Hoosier_43075_R20_W8_candidate.tir`，產表條件為 9 psi、外傾角 0°、單輪載重 100–1,400 N。輪胎力查詢超出載重範圍時使用最接近的邊界。內附候選係數產出的滾阻為 0。Pacejka 模式若需計入非零滾阻，請選用含有對應滾阻資料的 NPZ。
+W8 力圖由 Hoosier 43075 R20 W8 候選係數產生，產表條件為 9 psi、外傾角 0°、單輪載重 100–1,400 N。輪胎力查詢超出載重範圍時使用最接近的邊界。該候選係數產出的滾阻為 0。Pacejka 模式若需計入非零滾阻，請選用含有對應滾阻資料的 NPZ。
 
 ## 計算範圍
 

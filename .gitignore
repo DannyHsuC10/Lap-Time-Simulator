@@ -8,5 +8,6 @@ wheels/
 
 *.csv
 *.png
+*.[tT][iI][rR]
 # Virtual environments
 .venv
