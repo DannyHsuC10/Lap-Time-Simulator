@@ -60,8 +60,16 @@ small { display: block; }
 .curve-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-block: 10px; color: var(--muted); font-size: .8rem; }
 .curve-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .curve-legend i { width: 15px; height: 3px; border-radius: 3px; }
-#curve-chart.surface { cursor: grab; touch-action: none; }
-#curve-chart.surface:active { cursor: grabbing; }
+.curve-dialog {
+  color: inherit;
+  width: min(820px, calc(100% - 28px));
+  max-height: calc(100dvh - 28px);
+  overflow: auto;
+}
+.curve-dialog::backdrop { background: rgba(4, 10, 16, .70); }
+.curve-dialog .empty, .curve-dialog canvas { min-height: 0; height: clamp(190px, 40dvh, 370px); }
+#ggv-chart.surface { cursor: grab; touch-action: none; }
+#ggv-chart.surface:active { cursor: grabbing; }
 button { padding: 8px 13px; border: 1px solid transparent; border-radius: 7px; font-size: .88rem; font-weight: 650; color: #0d2425; background: var(--accent); cursor: pointer; }
 button.secondary { color: inherit; background: #1c2a38; border-color: var(--border); }
 button:disabled { opacity: .48; cursor: default; }

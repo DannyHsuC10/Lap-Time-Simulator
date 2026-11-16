@@ -33,11 +33,12 @@ let worker;
 let inspectionWorker;
 let result;
 let job;
+let inspectionTool;
 
 function setStatus(message, error = false) {
   status.textContent = message;
   status.classList.toggle("error", error);
-  if (job === "inspect") curves.status(message, error);
+  if (job === "inspect") curves.status(inspectionTool, message, error);
 }
 
 function updateInputs() {
@@ -97,14 +98,15 @@ function restoreDefaults() {
   updateInputs();
 }
 
-function setJob(nextJob) {
+function setJob(nextJob, tool) {
   job = nextJob;
+  inspectionTool = tool;
   const busy = Boolean(job);
   fields.disabled = busy;
   run.disabled = busy;
   reset.disabled = busy;
   cancel.hidden = job !== "run" && job !== "inspect";
-  byId("curve-cancel").hidden = job !== "inspect";
+  byId("ggv-cancel").hidden = tool !== "ggv";
   download.disabled = busy || !result;
   curves.setBusy(busy);
 }
@@ -218,7 +220,12 @@ function readInputs(tool) {
     else if (field.type === "number") {
       if (!field.checkValidity()) {
         field.closest("details").open = true;
-        field.reportValidity();
+        if (included) {
+          const label = field.labels[0].textContent.trim();
+          curves.status(tool, `請關閉視窗並檢查左側「${label}」的設定。`, true);
+        } else {
+          field.reportValidity();
+        }
         return;
       }
       values[key] = schema.percentages.includes(key) ? field.valueAsNumber / 100 : field.valueAsNumber;
@@ -235,12 +242,14 @@ function startInspection(tool, conditions) {
   if (job || !schema) return;
   const inputs = readInputs(tool);
   if (!inputs) return;
-  setJob("inspect");
+  setJob("inspect", tool);
   setStatus("準備計算…");
   getWorker(true).postMessage({ type: "inspect", tool, conditions, ...inputs });
 }
 
-const curves = installCurveTools(startInspection);
+const curves = installCurveTools(startInspection, (tool) => {
+  if (inspectionTool === tool) cancelJob();
+});
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   if (run.disabled) return;
@@ -272,7 +281,7 @@ function cancelJob() {
   setJob();
 }
 cancel.addEventListener("click", cancelJob);
-byId("curve-cancel").addEventListener("click", cancelJob);
+byId("ggv-cancel").addEventListener("click", cancelJob);
 download.addEventListener("click", () => {
   setJob("export");
   setStatus("正在產生 CSV…");

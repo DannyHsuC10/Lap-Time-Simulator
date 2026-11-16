@@ -36,7 +36,7 @@
                 <label>自由半徑（m）<input name="tire_radius" type="number" step="any" required></label>
                 <label data-show="tire_model=superellipse,ellipse">固定滾阻係數<input name="rolling_coefficient" type="number" min="0" step="any" required></label>
                 <small class="wide" data-show="tire_model=table" hidden>滾動阻力隨 Pacejka 查表。</small>
-                <button type="button" class="secondary wide tool-shortcut" data-tool="tire">輪胎力掃描</button>
+                <button type="button" class="secondary wide tool-shortcut" data-tool="tire" aria-haspopup="dialog" aria-controls="curve-dialog">輪胎力掃描</button>
               </div>
             </details>
             <details>
@@ -73,7 +73,7 @@
                 <label>傳動效率（%）<input name="gear_efficiency" type="number" min="0" max="100" step="any" required></label>
                 <label>前輪限扭比例（0–1）<input name="front_torque_scale" type="number" min="0" max="1" step="any" required></label>
                 <label>後輪限扭比例（0–1）<input name="rear_torque_scale" type="number" min="0" max="1" step="any" required></label>
-                <button type="button" class="secondary wide tool-shortcut" data-tool="motor">馬達曲線</button>
+                <button type="button" class="secondary wide tool-shortcut" data-tool="motor" aria-haspopup="dialog" aria-controls="curve-dialog">馬達曲線</button>
               </div>
             </details>
             <details>
@@ -101,7 +101,7 @@
                 <div class="file-input wide" data-show="aero_enabled=true">
                   <label>空力係數<input name="aero_path" type="file" accept=".json"></label>
                 </div>
-                <button type="button" class="secondary wide tool-shortcut" data-tool="aero">空力掃描</button>
+                <button type="button" class="secondary wide tool-shortcut" data-tool="aero" aria-haspopup="dialog" aria-controls="curve-dialog">空力掃描</button>
               </div>
             </details>
             <details>
@@ -138,13 +138,10 @@
       </form>
       <p id="status" role="status">載入模擬設定…</p>
     </section>
-    <section class="panel results" aria-label="圈速結果與曲線工具">
+    <section class="panel results" aria-label="圈速結果與 GGV">
       <nav class="tool-tabs" aria-label="結果檢視">
         <button type="button" data-tool="lap" aria-pressed="true">圈速結果</button>
         <button type="button" data-tool="ggv" aria-pressed="false" disabled>GGV</button>
-        <button type="button" data-tool="motor" aria-pressed="false" disabled>馬達曲線</button>
-        <button type="button" data-tool="aero" aria-pressed="false" disabled>空力掃描</button>
-        <button type="button" data-tool="tire" aria-pressed="false" disabled>輪胎力掃描</button>
       </nav>
       <div id="lap-panel">
       <div class="result-heading">
@@ -173,12 +170,40 @@
         <input id="sample" type="range" min="0" value="0">
       </div>
       </div>
-      <section id="curves-panel" aria-labelledby="curves-title" hidden>
+      <section id="ggv-panel" aria-labelledby="ggv-title" hidden>
+        <div class="result-heading">
+          <h2 id="ggv-title">GGV 加速度包絡</h2>
+          <div class="actions">
+            <button type="button" id="ggv-run" disabled>計算 GGV</button>
+            <button type="button" class="secondary" id="ggv-cancel" hidden>取消</button>
+          </div>
+        </div>
+        <div class="curve-controls">
+          <label>圖表<select id="ggv-view"><option value="surface">3D 曲面</option><option value="slice">2D 切片</option></select></label>
+          <label id="ggv-speed-label" hidden>車速<select id="ggv-speed"><option value="all">代表車速疊圖</option></select></label>
+        </div>
+        <p id="ggv-status" class="curve-note" role="status"></p>
+        <div class="empty" id="ggv-empty">按「計算 GGV」查看車輛加速度包絡。</div>
+        <div id="ggv-output" hidden>
+          <canvas id="ggv-chart" role="img" aria-label="GGV 加速度包絡"></canvas>
+          <div id="ggv-legend" class="curve-legend"></div>
+          <div class="actions" id="ggv-rotation" hidden>
+            <button type="button" class="secondary" data-rotate="left" aria-label="向左旋轉">←</button>
+            <button type="button" class="secondary" data-rotate="right" aria-label="向右旋轉">→</button>
+            <button type="button" class="secondary" data-rotate="up" aria-label="抬高視角">↑</button>
+            <button type="button" class="secondary" data-rotate="down" aria-label="降低視角">↓</button>
+            <button type="button" class="secondary" data-rotate="reset">重設視角</button>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+  <dialog class="panel curve-dialog" id="curve-dialog" aria-labelledby="curves-title">
         <div class="result-heading">
           <h2 id="curves-title" tabindex="-1"></h2>
           <div class="actions">
             <button type="submit" form="curve-form" id="curve-run">更新曲線</button>
-            <button type="button" class="secondary" id="curve-cancel" hidden>取消</button>
+            <button type="button" class="secondary" id="curve-close" autofocus>關閉</button>
           </div>
         </div>
         <form id="curve-form">
@@ -201,29 +226,14 @@
           <label>曲線<select id="tire-metric"><option value="peaks">側向峰值 Fy</option><option value="drive">驅動上限 Fx</option><option value="brake">煞車下限 Fx</option></select></label>
           <label>輪胎<select id="tire-wheel"><option value="all">四輪合計</option><option value="0">FL</option><option value="1">FR</option><option value="2">RL</option><option value="3">RR</option></select></label>
         </div>
-        <div class="curve-controls" id="ggv-views" hidden>
-          <label>圖表<select id="ggv-view"><option value="surface">3D 曲面</option><option value="slice">2D 切片</option></select></label>
-          <label id="ggv-speed-label" hidden>車速<select id="ggv-speed"><option value="all">代表車速疊圖</option></select></label>
-        </div>
         <p id="curve-status" class="curve-note" role="status"></p>
         <div class="empty" id="curve-empty">按上方按鈕產生圖表。</div>
         <div id="curve-output" hidden>
           <canvas id="curve-chart" role="img" aria-label="曲線圖"></canvas>
           <div id="curve-legend" class="curve-legend"></div>
-          <div id="curve-sample-controls" hidden>
-            <label class="sample" for="curve-sample">取樣點 <output id="curve-readout"></output></label>
-            <input type="range" id="curve-sample" min="0" value="0">
-          </div>
-          <div class="actions" id="ggv-rotation" hidden>
-            <button type="button" class="secondary" data-rotate="left" aria-label="向左旋轉">←</button>
-            <button type="button" class="secondary" data-rotate="right" aria-label="向右旋轉">→</button>
-            <button type="button" class="secondary" data-rotate="up" aria-label="抬高視角">↑</button>
-            <button type="button" class="secondary" data-rotate="down" aria-label="降低視角">↓</button>
-            <button type="button" class="secondary" data-rotate="reset">重設視角</button>
-          </div>
+          <label class="sample" for="curve-sample">取樣點 <output id="curve-readout"></output></label>
+          <input type="range" id="curve-sample" min="0" value="0">
         </div>
-      </section>
-    </section>
-  </main>
+  </dialog>
 </body>
 </html>
