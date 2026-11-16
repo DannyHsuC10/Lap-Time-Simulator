@@ -1,6 +1,7 @@
 """Package the browser app and the shared LapSimLab solver for static hosting."""
 
 import argparse
+from dataclasses import fields
 from functools import partial
 from hashlib import sha256
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -18,16 +19,13 @@ WEB = Path(__file__).resolve().parent
 PROJECT = WEB.parent
 sys.path.insert(0, str(PROJECT))
 
-from lap_sim_lab.settings import MODEL_CHOICES, Settings
+from lap_sim_lab.settings import MODEL_CHOICES, PERCENTAGE_FIELDS, Settings
 
 
 MODULES = (
     "__init__", "aero", "brake", "car", "motor", "planner", "settings",
     "signals", "simulation", "suspension", "tire", "track",
 )
-MODEL_FIELDS = ("solver", "load_model")
-DATA_FIELDS = ("track_path", "tire_path", "motor_path", "aero_path")
-NUMBER_FIELDS = ("mass", "max_speed", "step_m", "track_width", "passes", "initial_speed", "tire_utilization")
 PYODIDE_VERSION = "314.0.8"
 PYODIDE_SHA256 = "ff3e5f9d9bc8e98ff30b99515535fc24d375994f47a978c61975d653e162ca37"
 PYODIDE_FILES = ("pyodide.mjs", "pyodide.asm.mjs", "pyodide.asm.wasm", "pyodide-lock.json", "python_stdlib.zip")
@@ -67,16 +65,25 @@ def build_runtime(destination):
 
 def build(destination):
     defaults = Settings()
-    values = {key: getattr(defaults, key) for key in (*MODEL_FIELDS, *NUMBER_FIELDS, "aero_enabled")}
-    data_files = {getattr(defaults, key) for key in DATA_FIELDS}
+    values = {}
+    data_files = {}
+    for field in fields(defaults):
+        value = getattr(defaults, field.name)
+        if isinstance(value, Path):
+            data_files[field.name] = value
+        else:
+            values[field.name] = value
+    quadratic_example = defaults.aero_path.with_name("quadratic_aero.json")
 
     destination.mkdir(parents=True, exist_ok=True)
     for name in ("index.html", "style.css", "app.js", "worker.js", "charts.js"):
         shutil.copyfile(WEB / name, destination / name)
     schema = {
         "defaults": values,
-        "models": {key: MODEL_CHOICES[key][1] for key in MODEL_FIELDS},
-        "track": defaults.track_path.name,
+        "models": {key: choices for key, (_, choices) in MODEL_CHOICES.items()},
+        "files": {key: source.name for key, source in data_files.items()},
+        "percentages": sorted(PERCENTAGE_FIELDS),
+        "quadraticAeroExample": quadratic_example.name,
     }
     (destination / "settings.json").write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
     with ZipFile(destination / "solver.zip", "w", ZIP_DEFLATED) as bundle:
@@ -84,8 +91,10 @@ def build(destination):
             path = Path("lap_sim_lab") / f"{name}.py"
             bundle.write(PROJECT / path, path.as_posix())
         bundle.write(WEB / "bridge.py", "bridge.py")
-        for source in sorted(data_files):
-            bundle.write(source, f"input_data/{source.name}")
+    inputs = destination / "inputs"
+    inputs.mkdir(exist_ok=True)
+    for source in (*data_files.values(), quadratic_example):
+        shutil.copyfile(source, inputs / source.name)
     build_runtime(destination / "pyodide")
 
 

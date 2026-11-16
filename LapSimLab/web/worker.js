@@ -1,7 +1,8 @@
 import { loadPyodide } from "./pyodide/pyodide.mjs";
 
 const runtimeURL = new URL("./pyodide/", import.meta.url).href;
-const uploadDirectory = "/uploaded-track";
+const inputDirectory = "/lapsim/input_data";
+const uploadDirectory = "/uploaded-inputs";
 let runtime;
 
 async function initialize() {
@@ -15,6 +16,7 @@ async function initialize() {
   ]);
   await pyodide.loadPackage("numpy");
   pyodide.unpackArchive(bundle, "zip", { extractDir: "/lapsim" });
+  pyodide.FS.mkdir(inputDirectory);
   pyodide.FS.mkdir(uploadDirectory);
   pyodide.runPython(`
 import sys
@@ -23,9 +25,9 @@ from bridge import export_csv, read_settings, run_lap
 
 last_lap = None
 
-def simulate_browser(settings_json, path, progress):
+def simulate_browser(settings_json, files_json, progress):
     global last_lap
-    last_lap, payload = run_lap(read_settings(settings_json, path), progress)
+    last_lap, payload = run_lap(read_settings(settings_json, files_json), progress)
     return payload
 
 def export_browser():
@@ -36,6 +38,28 @@ def export_browser():
 
 function report(message) {
   self.postMessage({ type: "progress", message });
+}
+
+async function prepareInputs(fs, files, uploads) {
+  const paths = {};
+  for (const [key, file] of Object.entries(files)) {
+    if (typeof file === "string") {
+      const path = `${inputDirectory}/${file}`;
+      if (!fs.analyzePath(path).exists) {
+        const response = await fetch(new URL(`./inputs/${encodeURIComponent(file)}`, import.meta.url));
+        if (!response.ok) throw new Error(`無法載入內建資料「${file}」（HTTP ${response.status}）。`);
+        fs.writeFile(path, new Uint8Array(await response.arrayBuffer()));
+      }
+      paths[key] = path;
+    } else {
+      const name = file.name.replace(/[^\p{L}\p{N}_.-]/gu, "_");
+      const path = `${uploadDirectory}/${key}-${name}`;
+      fs.writeFile(path, new Uint8Array(await file.arrayBuffer()));
+      uploads.push(path);
+      paths[key] = path;
+    }
+  }
+  return paths;
 }
 
 self.onmessage = async ({ data }) => {
@@ -54,18 +78,16 @@ self.onmessage = async ({ data }) => {
     }
 
     const simulate = pyodide.globals.get("simulate_browser");
-    let trackPath = "";
+    const uploads = [];
     try {
-      if (data.track) {
-        const filename = data.track.name.replace(/[^\p{L}\p{N}_.-]/gu, "_");
-        trackPath = `${uploadDirectory}/track-${filename}`;
-        pyodide.FS.writeFile(trackPath, new Uint8Array(await data.track.arrayBuffer()));
-      }
-      const result = JSON.parse(simulate(JSON.stringify(data.values), trackPath, report));
-      self.postMessage({ type: "result", result, trackName: data.track?.name ?? data.trackName });
+      report("載入模型資料…");
+      const paths = await prepareInputs(pyodide.FS, data.files, uploads);
+      const result = JSON.parse(simulate(JSON.stringify(data.values), JSON.stringify(paths), report));
+      const track = data.files.track_path;
+      self.postMessage({ type: "result", result, trackName: typeof track === "string" ? track : track.name });
     } finally {
       simulate.destroy();
-      if (trackPath && pyodide.FS.analyzePath(trackPath).exists) pyodide.FS.unlink(trackPath);
+      for (const path of uploads) pyodide.FS.unlink(path);
     }
   } catch (error) {
     const message = String(error.message ?? error).trim().split("\n").at(-1);

@@ -4,7 +4,9 @@
 
 ## GitHub Pages 網頁版
 
-網頁版提供內建 FSAE 賽道與自訂 LINE／ARC 賽道 CSV、基本求解設定、賽道速度圖和逐點訊號 CSV 匯出。求解在瀏覽器執行，選取的賽道檔留在本機。Pyodide 和 NumPy 由 GitHub Pages 一併提供。
+網頁左側包含輪胎、懸吊與車體、馬達、煞車、空力、賽道與圈速求解設定。展開分組後可調整參數、選取本機資料檔或下載內建範例。切換模型時只顯示適用的欄位，切回原模型會保留先前的輸入。右側可切換賽道、距離與時間圖，也能匯出逐點訊號 CSV。
+
+求解在瀏覽器執行，選取的資料檔留在本機。Pyodide 和 NumPy 由 GitHub Pages 一併提供。
 
 推送到 `main` 後，GitHub Actions 會建置並發布網頁。若要在本機預覽，從儲存庫根目錄執行 `python LapSimLab/web/build.py dist --serve`，再開啟終端機顯示的本機網址。建置時會下載執行環境。
 

@@ -3,8 +3,6 @@ import { bounds, drawChart } from "./charts.js";
 const byId = (id) => document.getElementById(id);
 const form = byId("settings");
 const fields = byId("fields");
-const track = byId("track");
-const solver = byId("solver");
 const run = byId("run");
 const reset = byId("reset");
 const cancel = byId("cancel");
@@ -14,6 +12,12 @@ const signal = byId("signal");
 const view = byId("view");
 const sample = byId("sample");
 const canvas = byId("chart");
+const conditionalFields = Array.from(fields.querySelectorAll("[data-show]"), (row) => ({
+  row,
+  field: row.querySelector("input, select"),
+  conditions: row.dataset.show.split(" ").map((term) => term.split("=")),
+}));
+const fileRows = new Map();
 let schema;
 let worker;
 let result;
@@ -23,22 +27,61 @@ function setStatus(message, error = false) {
   status.classList.toggle("error", error);
 }
 
-function updateSolverFields() {
-  const lap = solver.value === "lap";
-  byId("lap-only").hidden = !lap;
-  form.elements.passes.disabled = !lap;
-  byId("distance-only").hidden = lap;
-  form.elements.initial_speed.disabled = lap;
+function updateInputs() {
+  for (const { row, field, conditions } of conditionalFields) {
+    const visible = conditions.every(([key, accepted]) => {
+      const source = form.elements[key];
+      const value = source.type === "checkbox" ? String(source.checked) : source.value;
+      return accepted.split(",").includes(value);
+    });
+    row.hidden = !visible;
+    if (field) field.disabled = !visible;
+  }
+  for (const [key, { input, hint, clear, example }] of fileRows) {
+    const selected = input.files[0];
+    hint.textContent = selected ? "本機自訂檔案" : `使用內建資料 ${schema.files[key]}`;
+    clear.hidden = !selected;
+    const filename = key === "aero_path" && form.elements.aero_model.value === "quadratic" ?
+      schema.quadraticAeroExample : schema.files[key];
+    example.href = new URL(`./inputs/${encodeURIComponent(filename)}`, import.meta.url);
+    example.download = filename;
+  }
+}
+
+function setupFileRows() {
+  for (const key of Object.keys(schema.files)) {
+    const input = form.elements[key];
+    const row = input.closest(".file-input");
+    const hint = document.createElement("small");
+    hint.id = `${key}-hint`;
+    input.setAttribute("aria-describedby", hint.id);
+    const actions = document.createElement("div");
+    actions.className = "file-tools";
+    const example = document.createElement("a");
+    example.textContent = "下載範例";
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "secondary";
+    clear.textContent = "使用內建資料";
+    clear.addEventListener("click", () => {
+      input.value = "";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      input.focus();
+    });
+    actions.append(example, clear);
+    row.append(hint, actions);
+    fileRows.set(key, { input, hint, clear, example });
+  }
 }
 
 function restoreDefaults() {
-  track.value = "";
+  for (const { input } of fileRows.values()) input.value = "";
   for (const [key, value] of Object.entries(schema.defaults)) {
     const field = form.elements[key];
     if (field.type === "checkbox") field.checked = value;
-    else field.value = key === "tire_utilization" ? 100 * value : value;
+    else field.value = schema.percentages.includes(key) ? 100 * value : value;
   }
-  updateSolverFields();
+  updateInputs();
 }
 
 function setBusy(busy) {
@@ -137,20 +180,29 @@ function getWorker() {
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
+  if (run.disabled) return;
   const values = {};
   for (const [key, defaultValue] of Object.entries(schema.defaults)) {
     const field = form.elements[key];
     if (field.disabled) values[key] = defaultValue;
     else if (field.type === "checkbox") values[key] = field.checked;
     else if (field.type === "number") {
-      values[key] = key === "tire_utilization" ? field.valueAsNumber / 100 : field.valueAsNumber;
+      if (!field.checkValidity()) {
+        field.closest("details").open = true;
+        field.reportValidity();
+        return;
+      }
+      values[key] = schema.percentages.includes(key) ? field.valueAsNumber / 100 : field.valueAsNumber;
     } else values[key] = field.value;
   }
-  const selectedTrack = track.files[0];
+  const files = {};
+  for (const [key, { input }] of fileRows) {
+    if (!input.disabled) files[key] = input.files[0] ?? schema.files[key];
+  }
   clearResult();
   setBusy(true);
   setStatus("準備計算…");
-  getWorker().postMessage({ type: "run", values, track: selectedTrack, trackName: schema.track });
+  getWorker().postMessage({ type: "run", values, files });
 });
 
 form.addEventListener("reset", (event) => {
@@ -172,7 +224,10 @@ download.addEventListener("click", () => {
   setStatus("正在產生 CSV…");
   getWorker().postMessage({ type: "export" });
 });
-solver.addEventListener("change", updateSolverFields);
+form.addEventListener("change", () => {
+  updateInputs();
+  if (result && !run.disabled) setStatus("設定已變更，請重新計算以更新結果。");
+});
 for (const input of [signal, view, sample]) input.addEventListener("input", drawResult);
 new ResizeObserver(drawResult).observe(canvas);
 
@@ -183,6 +238,7 @@ async function initialize() {
   for (const [key, choices] of Object.entries(schema.models)) {
     form.elements[key].replaceChildren(...Object.entries(choices).map(([value, label]) => new Option(label, value)));
   }
+  setupFileRows();
   restoreDefaults();
   setBusy(false);
   setStatus("可以開始計算圈速。");

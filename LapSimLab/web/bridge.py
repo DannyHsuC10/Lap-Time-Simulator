@@ -9,10 +9,10 @@ from lap_sim_lab.settings import Settings
 from lap_sim_lab.simulation import simulate, write_csv
 
 
-def read_settings(values_json, track_path):
+def read_settings(values_json, files_json):
     values = json.loads(values_json)
-    settings = replace(Settings(), **values)
-    return replace(settings, track_path=Path(track_path)) if track_path else settings
+    paths = {key: Path(path) for key, path in json.loads(files_json).items()}
+    return replace(Settings(), **values, **paths)
 
 
 def run_lap(settings, progress):
