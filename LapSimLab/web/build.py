@@ -22,7 +22,7 @@ WEB = Path(__file__).resolve().parent
 PROJECT = WEB.parent
 sys.path.insert(0, str(PROJECT))
 
-from lap_sim_lab.settings import MODEL_CHOICES, PERCENTAGE_FIELDS, Settings
+from lap_sim_lab.settings import INPUT_CHOICES, MODEL_CHOICES, PERCENTAGE_FIELDS, Settings
 
 
 MODULES = (
@@ -82,14 +82,14 @@ def build(destination):
         "defaults": values,
         "models": {
             key: {value: ENGLISH[label] for value, label in choices.items()}
-            for key, (_, choices) in MODEL_CHOICES.items()
+            for key, (_, choices) in INPUT_CHOICES.items()
         },
         "files": {key: source.name for key, source in data_files.items()},
         "percentages": sorted(PERCENTAGE_FIELDS),
         "quadraticAeroExample": quadratic_example.name,
     }
     index = (WEB / "index.html").read_text(encoding="utf-8")
-    index = render_references(index, WEB / "models", schema["models"])
+    index = render_references(index, WEB / "models", {key: schema["models"][key] for key in MODEL_CHOICES})
     destination.mkdir(parents=True, exist_ok=True)
     for name in ("icon.svg", "style.css", "app.js", "worker.js", "charts.js", "curves.js", "ggv-chart.js"):
         shutil.copyfile(WEB / name, destination / name)

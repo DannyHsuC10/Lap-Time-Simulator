@@ -27,6 +27,8 @@ def run_lap(settings, progress):
     track, plan = result.track, result.plan
     output = {
         "lapTime": result.lap_time,
+        "trackName": settings.track_name,
+        "trackSource": result.track_source,
         "distance": track.s.tolist(),
         "time": result.time.tolist(),
         "x": track.x.tolist(),

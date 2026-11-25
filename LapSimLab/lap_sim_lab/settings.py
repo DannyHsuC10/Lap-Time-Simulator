@@ -34,6 +34,8 @@ MODEL_CHOICES = {
     "aero_model": ("空力", {"attitude": "姿態空力", "quadratic": "固定係數 v²"}),
     "curvature_model": ("賽道曲率", {"raw": "原始曲率", "smooth": "距離域平滑"}),
 }
+TRACK_SOURCES = {"csv": "分段 CSV（內附／自訂）", "acceleration": "直線加速", "skidpad": "定圓"}
+INPUT_CHOICES = {**MODEL_CHOICES, "track_source": ("賽道來源", TRACK_SOURCES)}
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,13 @@ class Settings:
     ellipse_path: Path = DEFAULT_ELLIPSE_PATH
     tire_utilization: float = 1.0
     time_limit_s: float = 120.0
+    track_source: str = "csv"
+    acceleration_length_m: float = 75.0
+    skidpad_radius_m: float = 9.125
+
+    @property
+    def track_name(self) -> str:
+        return self.track_path.name if self.track_source == "csv" else localize(TRACK_SOURCES[self.track_source])
 
     @property
     def rear_heave_stiffness(self) -> float:
@@ -103,12 +112,17 @@ class Settings:
         return self.front_roll_stiffness * self.rear_stiffness_ratio
 
     def validate(self):
-        for key, (label, choices) in MODEL_CHOICES.items():
+        for key, (label, choices) in INPUT_CHOICES.items():
             if getattr(self, key) not in choices:
                 raise ValueError(localize("無法辨識「{label}」的選項。", label=localize(label)))
         if self.load_model == "point_mass" and self.yaw_correction:
             raise ValueError(localize("偏航慣量修正需要逐輪輪載。"))
-        for name, label in POSITIVE_FIELDS:
+        positive_fields = POSITIVE_FIELDS
+        if self.track_source == "acceleration":
+            positive_fields += (("acceleration_length_m", "直線長度"),)
+        elif self.track_source == "skidpad":
+            positive_fields += (("skidpad_radius_m", "定圓半徑"),)
+        for name, label in positive_fields:
             if not math.isfinite(value := getattr(self, name)) or value <= 0:
                 raise ValueError(localize("{label}須為有限的正數。", label=localize(label)))
         for name, label in (
@@ -137,7 +151,7 @@ class Settings:
                 raise ValueError(localize("{label}須介於 0 和 1。", label=localize(label)))
         if type(self.passes) is not int or not 1 <= self.passes <= 30:
             raise ValueError(localize("前後向掃描次數須為 1 到 30 的整數。"))
-        if self.solver == "distance" and self.initial_speed > self.max_speed:
+        if self.track_source != "acceleration" and self.solver == "distance" and self.initial_speed > self.max_speed:
             raise ValueError(localize("起始車速不得超過速度上限。"))
         if any(type(count) is not int or count <= 0 for count in (self.front_pistons, self.rear_pistons)):
             raise ValueError(localize("卡鉗活塞數須為正整數。"))

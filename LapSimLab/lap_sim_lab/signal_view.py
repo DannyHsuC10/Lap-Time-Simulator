@@ -80,12 +80,16 @@ class SignalView(ttk.Frame):
         summary = ttk.Frame(self)
         summary.pack(fill="x", pady=(0, 8))
         self.metrics = []
+        self.time_label = tk.StringVar(value="預估圈速")
         labels = ("預估圈速", "取樣路徑長度", "最高車速", "最大橫向加速度")
         for column, label in enumerate(labels):
             summary.columnconfigure(column, weight=1, uniform="metric")
             card = ttk.Frame(summary, style="Panel.TFrame", padding=(12, 7))
             card.grid(row=0, column=column, sticky="ew", padx=(0, 6 if column < len(labels) - 1 else 0))
-            ttk.Label(card, text=label, style="Hint.TLabel").pack(anchor="w")
+            heading = ttk.Label(card, text=label, style="Hint.TLabel")
+            if column == 0:
+                heading.configure(textvariable=self.time_label)
+            heading.pack(anchor="w")
             value = tk.StringVar(value="—")
             self.metrics.append(value)
             ttk.Label(card, textvariable=value, style="Metric.TLabel").pack(anchor="w")
@@ -158,6 +162,7 @@ class SignalView(ttk.Frame):
 
     def set_result(self, result, *, stale=False):
         self.result = result
+        self.time_label.set("加速時間" if result.track_source == "acceleration" else "預估圈速")
         self.speed_signal = result.signals.get("speed_kmh") or Signal("車速", "km/h", result.plan.speed * 3.6)
         self.available_signals = {
             key: signal for key, signal in result.signals.items()

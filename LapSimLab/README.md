@@ -8,6 +8,7 @@
 
 求解在瀏覽器執行，選取的資料檔留在本機。Pyodide 和 NumPy 由 GitHub Pages 一併提供。
 
+- 在 **Track → Track Source** 選擇 **Straight-Line Acceleration** 或 **Skidpad**，即可調整 **Straight Length (m)** 或 **Skidpad Radius (m)**。若要使用內附或自訂的分段賽道，請選 **Track Segments CSV (Built-In or Custom)**。
 - 點選頂部標題右側的 **Export JSON** 可下載網頁版存檔，內容包含模型選項、輸入參數，以及已選取的自訂資料檔。在網頁版點選 **Import JSON** 可還原存檔。匯入後按 **Calculate Lap** 即可重新計算圈速。
 - 在 **Simulation Inputs** 點選 **Import Vehicle Initial Settings**，開啟 Vehicle Initial Sizing Lab 匯出的 `Vehicle_initial_settings.json`。網頁會填入 **Suspension and Body** 與 **Brakes**，自動選用質點模型及等效機械利益煞車。**Motor** 的 **Fixed Gear Reduction Ratio** 採用 Initial Sizing 的加速與極速減速比平均值。網頁初次開啟、恢復預設及匯入時，輪胎使用率皆設為 70%，可再手動調整。
 - 匯入的懸吊參數可在切回逐輪模型後查看。LapSimLab 以後／前 Heave 剛性比作為 Heave 與 Roll 的共用比例，並以兩軸平均值表示輪胎垂直剛性。煞車機械利益以指定減速度所需的總煞車力除以踏力計算。若舊版匯出檔缺少原始設計參數，煞車只匯入前軸比例，減速比沿用目前設定。
@@ -33,6 +34,14 @@ python LapSimLab/web/build.py dist --serve
 3. 在「訊號檢視」切換至時間或距離圖，可查看速度、縱橫向加速度、四輪輪荷、側傾／俯仰及空力等訊號。可匯出完整 CSV 或只匯出勾選的訊號。
 
 關閉前可按視窗右上角的「匯出 JSON」，將模型選項、輸入參數、開關和資料檔路徑存成桌面版設定檔。下次按「匯入 JSON」選擇該檔案即可還原，包含當時被模型選項隱藏的參數。設定 JSON 記錄檔案路徑，因此移動賽道、輪胎或空力等資料檔後，請依畫面提示重新選檔。
+
+### 範例賽道
+
+在「賽道 → 賽道來源」選擇「直線加速」或「定圓」，輸入以公尺為單位的尺寸後按「計算」。兩種賽道都可查看速度圖和逐點訊號，也可匯出 CSV。
+
+- **直線加速**預設長度為 **75 m**。車輛從靜止開始加速，通過終點即停止計時。結果顯示加速時間和最高車速。
+- **定圓**預設中心線半徑為 **9.125 m**。賽道是逆時針一整圈，計時距離為 2π × 半徑。可沿用全圈迭代或改選距離域前向積分。
+- 選擇「分段 CSV（內附／自訂）」可使用原有的 `fsae_A_2025.csv` 或載入自己的分段賽道檔。
 
 ## 車輛控制模擬
 

@@ -441,10 +441,11 @@ def build_friction_limited_speed_plan(
         lateral_speed_limit = apply_yaw_correction(
             track, lateral_speed_limit, tire_limit_map, check_deadline=check_deadline,
         )
-    if settings.solver == "distance":
+    if settings.track_source == "acceleration" or settings.solver == "distance":
         report(localize("沿距離向前積分"))
+        start_speed = 0.0 if settings.track_source == "acceleration" else settings.initial_speed
         speed = integrate_forward(
-            track, lateral_speed_limit, tire_limit_map, power_brake_limit, settings.initial_speed,
+            track, lateral_speed_limit, tire_limit_map, power_brake_limit, start_speed,
             check_deadline=check_deadline,
         )
         passes_used, converged = 0, None
@@ -483,7 +484,8 @@ def integrate_forward(track, lateral_limit, limits, power, initial_speed, *, che
     entry_limit = lateral_limit.copy()
     spacing = np.diff(track.s)
     lookahead = limits.car.settings.braking_lookahead
-    if lookahead:
+    acceleration_test = limits.car.settings.track_source == "acceleration"
+    if not acceleration_test and lookahead:
         for index in range(len(entry_limit) - 2, -1, -1):
             if check_deadline is not None:
                 check_deadline()
@@ -494,7 +496,7 @@ def integrate_forward(track, lateral_limit, limits, power, initial_speed, *, che
                 entry_limit[index] = min(entry_limit[index], max_entry_speed_for_braking(
                     entry_limit[index + 1], ds, track.curvature[index], entry_limit[index], limits, power,
                 ))
-    else:
+    elif not acceleration_test:
         targets = np.flatnonzero(np.r_[
             False, (lateral_limit[1:-1] < lateral_limit[:-2]) & (lateral_limit[1:-1] <= lateral_limit[2:]), True,
         ])
@@ -510,7 +512,7 @@ def integrate_forward(track, lateral_limit, limits, power, initial_speed, *, che
         curvature = float(track.curvature[index])
         drive = drive_accel_at_speed(v, curvature, limits, power)
         cap = entry_limit[index + 1]**2
-        if not lookahead:
+        if not acceleration_test and not lookahead:
             brake = brake_decel_at_speed(v, curvature, limits, power)
             target = targets[np.searchsorted(targets, index, side="right")]
             distance_to_target = track.s[target] - track.s[index + 1]
@@ -518,7 +520,7 @@ def integrate_forward(track, lateral_limit, limits, power, initial_speed, *, che
         # A reachable speed takes precedence over a missed target. The result
         # retains the lateral limit so any overspeed is visible to the caller.
         reachable_min = 0.0
-        if cap < v * v:
+        if not acceleration_test and cap < v * v:
             if lookahead:
                 brake = brake_decel_at_speed(v, curvature, limits, power)
             reachable_min = max(v * v - 2 * brake * ds, 0.0)

@@ -18,7 +18,7 @@ from .ggv_gui import GGVPage
 from .model_help import ModelHelpPage, describe_models
 from .optimization import FIXED_MODELS, optimize_lap
 from .optimization_gui import OptimizationPage
-from .settings import MODEL_CHOICES, PERCENTAGE_FIELDS, Settings, parse_percentage
+from .settings import INPUT_CHOICES, PERCENTAGE_FIELDS, TRACK_SOURCES, Settings, parse_percentage
 from .settings_profile import load_profile, save_profile, write_settings_json
 from .signal_view import SignalView
 from .simulation import simulate, write_csv
@@ -154,7 +154,7 @@ class LapSimLab(tk.Tk):
         self.optimization_page = OptimizationPage(
             self.result_pages, self.entries, self.start_optimization, self.cancel_optimization, self.apply_optimization,
         )
-        self.optimization_page.refresh_sources(self.selected_models(), self.paths["track_path"].name)
+        self.refresh_optimization_sources()
         for page, label in (
             (self.signal_page, "訊號檢視"),
             (self.optimization_page, "敏感性分析"),
@@ -338,20 +338,24 @@ class LapSimLab(tk.Tk):
         }[self.selected_models()["aero_model"]])
 
         track = self.input_section(parent, "賽道")
-        self.model_row(track, "curvature_model")
+        self.model_row(track, "track_source")
         self.file_row(track, "track_path")
+        self.number_row(track, "acceleration_length_m", "直線長度", "m")
+        self.number_row(track, "skidpad_radius_m", "定圓半徑", "m")
+        self.model_row(track, "curvature_model")
         self.number_row(track, "curvature_sigma_m", "曲率平滑尺度", "m")
         self.number_row(track, "track_width", "賽道寬度", "m")
         self.number_row(track, "step_m", "取樣間距", "m")
         solver = self.input_group(track, "圈速求解")
         self.model_row(solver, "solver")
+        self.model_hint(solver, "acceleration_hint", "從靜止加速，通過終點即停止計時。")
         self.number_row(solver, "max_speed", "速度上限", "m/s")
         self.number_row(solver, "time_limit_s", "計算時間上限", "秒，0＝不限")
         self.number_row(solver, "safety_factor", "側向安全係數", "0–1")
         self.number_row(solver, "passes", "最大掃描次數", "次")
         self.number_row(solver, "initial_speed", "起始車速", "m/s")
         self.toggle_row(solver, "braking_lookahead", "使用單次煞車前瞻")
-        self.example_button(track, lambda: self.default.track_path)
+        self.section_button(track, "下載內附賽道 CSV", lambda: self.save_example(self.default.track_path))
 
     def input_panel(self, parent):
         viewport = ttk.Frame(parent, style="Panel.TFrame")
@@ -449,7 +453,7 @@ class LapSimLab(tk.Tk):
             self.bind_input_scroll(widget)
 
     def model_row(self, panel, key):
-        label, choices = MODEL_CHOICES[key]
+        label, choices = INPUT_CHOICES[key]
         row = self.input_row(panel, key, label)
         variable = tk.StringVar(value=choices[getattr(self.default, key)])
         self.model_vars[key] = variable
@@ -486,6 +490,8 @@ class LapSimLab(tk.Tk):
         lp03 = models["motor_model"] == "lp03"
         hydraulic = models["brake_model"] == "hydraulic"
         lap = models["solver"] == "lap"
+        track_source = models["track_source"]
+        acceleration = track_source == "acceleration"
         conditional = {
             "tire_path": tire == "superellipse", "ellipse_path": tire == "ellipse",
             "tire_table_path": tire == "table",
@@ -502,8 +508,11 @@ class LapSimLab(tk.Tk):
             **dict.fromkeys(("pedal_ratio", "master_diameter", "front_caliper_diameter", "rear_caliper_diameter",
                              "front_pistons", "rear_pistons", "disc_diameter", "pad_mu"), hydraulic),
             "aero_model": aero, "aero_path": aero,
-            "curvature_sigma_m": models["curvature_model"] == "smooth", "passes": lap,
-            "initial_speed": not lap, "braking_lookahead": not lap,
+            "track_path": track_source == "csv",
+            "acceleration_length_m": acceleration, "skidpad_radius_m": track_source == "skidpad",
+            "acceleration_hint": acceleration, "solver": not acceleration,
+            "curvature_sigma_m": models["curvature_model"] == "smooth", "passes": lap and not acceleration,
+            "initial_speed": not lap and not acceleration, "braking_lookahead": not lap and not acceleration,
         }
         return {key for key in self.input_rows if conditional.get(key, True)}
 
@@ -541,12 +550,18 @@ class LapSimLab(tk.Tk):
         self.ggv_page.invalidate()
         self.ggv_page.set_lap_result(None)
         self.optimization_page.invalidate()
-        self.optimization_page.refresh_sources(self.selected_models(), self.paths["track_path"].name)
+        self.refresh_optimization_sources()
         self.signal_page.mark_stale()
         if not self.busy:
             self.status.set("設定已變更，按「計算」更新結果。")
         if self.result_pages.select() == str(self.model_help):
             self.refresh_model_help()
+
+    def refresh_optimization_sources(self):
+        models = self.selected_models()
+        source = models["track_source"]
+        name = self.paths["track_path"].name if source == "csv" else TRACK_SOURCES[source]
+        self.optimization_page.refresh_sources(models, name)
 
     def choose_file(self, key, suffix):
         path = filedialog.askopenfilename(
@@ -657,13 +672,13 @@ class LapSimLab(tk.Tk):
     def apply_model_choices(self, choices):
         for key, value in choices.items():
             if key in self.model_vars:
-                self.model_vars[key].set(MODEL_CHOICES[key][1][value])
+                self.model_vars[key].set(INPUT_CHOICES[key][1][value])
             else:
                 getattr(self, key).set(value)
 
     def read_motor_curve(self):
         model = self.model_vars["motor_model"].get()
-        selected = "lp03" if model == MODEL_CHOICES["motor_model"][1]["lp03"] else "curve"
+        selected = "lp03" if model == INPUT_CHOICES["motor_model"][1]["lp03"] else "curve"
         settings = Settings(
             motor_model=selected, motor_path=self.paths["motor_path"], lp03_path=self.paths["lp03_path"],
             dc_voltage=float(self.entries["dc_voltage"].get()) if selected == "lp03" else self.default.dc_voltage,
@@ -674,7 +689,7 @@ class LapSimLab(tk.Tk):
 
     def selected_models(self):
         return {
-            key: next(value for value, label in MODEL_CHOICES[key][1].items() if label == var.get())
+            key: next(value for value, label in INPUT_CHOICES[key][1].items() if label == var.get())
             for key, var in self.model_vars.items()
         }
 
@@ -725,12 +740,14 @@ class LapSimLab(tk.Tk):
             active = self.visible_input_keys(values, aero=values["aero_enabled"], yaw=values["yaw_correction"])
         if not include_aero:
             values["aero_enabled"] = False
+        if vehicle_only:
+            values["track_source"] = self.default.track_source
         for key in self.entries:
             if key not in active:
                 continue
             if vehicle_only and key in {
                 "max_speed", "time_limit_s", "safety_factor", "passes", "initial_speed", "track_width",
-                "step_m", "curvature_sigma_m", "gear_ratio", "gear_efficiency",
+                "step_m", "curvature_sigma_m", "acceleration_length_m", "skidpad_radius_m", "gear_ratio", "gear_efficiency",
                 "front_torque_scale", "rear_torque_scale", "front_brake_bias",
                 "brake_leverage", "pedal_force", "pedal_ratio", "master_diameter",
                 "front_caliper_diameter", "rear_caliper_diameter", "front_pistons", "rear_pistons",
@@ -764,7 +781,7 @@ class LapSimLab(tk.Tk):
             except Exception as exc:
                 self.events.put(("error", exc))
             else:
-                self.events.put(("result", (revision, settings.track_path.stem, result)))
+                self.events.put(("result", (revision, settings.track_name, result)))
 
         self.start_work(work, "正在計算…")
 
@@ -835,7 +852,7 @@ class LapSimLab(tk.Tk):
             if key not in AERO_COEFFICIENT_KEYS:
                 snapshot[key] = result.parameter_value(key)
         self.apply_inputs(snapshot)
-        self.show_result(self.revision, result.settings.track_path.stem, result.simulation)
+        self.show_result(self.revision, result.settings.track_name, result.simulation)
 
     def start_work(self, work, message):
         self.busy = True
@@ -921,7 +938,7 @@ class LapSimLab(tk.Tk):
                 self.file_vars[key].set(value.name)
                 self.inputs_changed()
             else:
-                self.model_vars[key].set(MODEL_CHOICES[key][1][value])
+                self.model_vars[key].set(INPUT_CHOICES[key][1][value])
         self.model_changes.configure(text=describe_model_changes(settings, changes))
         self.model_changes.pack(fill="x", pady=(5, 0))
         self.calculate()

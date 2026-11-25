@@ -46,7 +46,7 @@ def describe_model_changes(settings: Settings, changes: dict[str, str | bool | P
 
 def timeout_suggestions(settings: Settings) -> str:
     suggestions = []
-    if settings.solver == "lap":
+    if settings.solver == "lap" and settings.track_source != "acceleration":
         if settings.passes > 1:
             fewer = (settings.passes + 1) // 2
             suggestions.append(f"最大掃描次數從 {settings.passes} 輪降到 {fewer} 輪")

@@ -1,5 +1,6 @@
 import csv
 import json
+import math
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -21,6 +22,48 @@ from lap_sim_lab.timeout_recovery import describe_model_changes, lower_model_cho
 
 
 class SolverTests(unittest.TestCase):
+    def test_straight_acceleration_starts_from_rest_and_times_the_requested_length(self):
+        settings = Settings(
+            track_source="acceleration", track_path=Path("missing.csv"), initial_speed=15.0,
+            tire_model="ellipse", load_model="point_mass", aero_enabled=False,
+        )
+        default = simulate(settings, include_signals=False)
+        custom = simulate(replace(settings, acceleration_length_m=123.45), include_signals=False)
+
+        self.assertEqual(default.track.s[-1], 75.0)
+        self.assertEqual(custom.track.s[-1], 123.45)
+        self.assertEqual(custom.track.x[-1], 123.45)
+        self.assertEqual(custom.plan.speed[0], 0.0)
+        self.assertTrue(np.all(np.diff(custom.plan.speed) >= 0.0))
+        self.assertTrue(np.all(custom.lateral_acceleration == 0.0))
+        self.assertGreater(custom.lap_time, default.lap_time)
+
+    def test_skidpad_is_closed_with_exact_arc_distance_and_curvature(self):
+        for radius in (Settings().skidpad_radius_m, 12.75):
+            with self.subTest(radius=radius):
+                result = simulate(Settings(
+                    track_source="skidpad", skidpad_radius_m=radius, track_path=Path("missing.csv"),
+                    step_m=100.0, tire_model="ellipse", load_model="point_mass", aero_enabled=False,
+                ), include_signals=False)
+                track = result.track
+                self.assertEqual(track.s[-1], math.tau * radius)
+                self.assertEqual((track.x[0], track.y[0]), (track.x[-1], track.y[-1]))
+                self.assertGreaterEqual(len(track.s), 5)
+                np.testing.assert_allclose(np.hypot(track.x, track.y), radius)
+                np.testing.assert_allclose(track.curvature, 1.0 / radius)
+                self.assertGreater(result.lap_time, 0.0)
+                self.assertGreater(np.max(result.lateral_acceleration), 0.0)
+
+    def test_generated_tracks_validate_dimensions_and_sample_count(self):
+        for settings in (
+            Settings(track_source="acceleration", acceleration_length_m=0.0),
+            Settings(track_source="skidpad", skidpad_radius_m=float("nan")),
+            Settings(track_source="acceleration", step_m=0.001),
+            Settings(track_source="skidpad", step_m=0.001),
+        ):
+            with self.subTest(settings=settings), self.assertRaises(ValueError):
+                simulate(settings)
+
     def test_csv_export_omits_zero_columns_and_supports_selected_signals(self):
         settings = Settings(tire_model="ellipse", load_model="point_mass", aero_model="quadratic", step_m=6)
         result = simulate(settings)

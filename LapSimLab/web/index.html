@@ -120,10 +120,13 @@
             <details>
               <summary>Track</summary>
               <div class="settings-grid">
-                <label class="wide">Track Curvature<select name="curvature_model"></select></label>
-                <div class="file-input wide">
+                <label class="wide">Track Source<select name="track_source"></select></label>
+                <div class="file-input wide" data-show="track_source=csv">
                   <label>Track Segments CSV<input name="track_path" type="file" accept=".csv"></label>
                 </div>
+                <label data-show="track_source=acceleration" hidden>Straight Length (m)<input name="acceleration_length_m" type="number" step="any" required></label>
+                <label data-show="track_source=skidpad" hidden>Skidpad Radius (m)<input name="skidpad_radius_m" type="number" step="any" required></label>
+                <label class="wide">Track Curvature<select name="curvature_model"></select></label>
                 <label data-show="curvature_model=smooth" hidden>Curvature Smoothing Scale (m)<input name="curvature_sigma_m" type="number" step="any" required></label>
                 <label>Track Width (m)<input name="track_width" type="number" step="any" required></label>
                 <label>Sample Spacing (m)<input name="step_m" type="number" step="any" required></label>
@@ -132,13 +135,14 @@
             <details>
               <summary>Lap Solver</summary>
               <div class="settings-grid">
-                <label class="wide">Solver<select name="solver"></select></label>
+                <label class="wide" data-show="track_source=csv,skidpad">Solver<select name="solver"></select></label>
+                <small class="wide" data-show="track_source=acceleration" hidden>Timing starts from rest and ends at the finish line.</small>
                 <label>Speed Limit (m/s)<input name="max_speed" type="number" step="any" required></label>
                 <label>Calculation Time Limit (s, 0 = unlimited)<input name="time_limit_s" type="number" min="0" step="any" required></label>
                 <label>Lateral Safety Factor (0–1)<input name="safety_factor" type="number" max="1" step="any" required></label>
-                <label data-show="solver=lap">Maximum Passes<input name="passes" type="number" min="1" max="30" step="1" required></label>
-                <label data-show="solver=distance" hidden>Initial Speed (m/s)<input name="initial_speed" type="number" min="0" step="any" required></label>
-                <label class="wide check" data-show="solver=distance" hidden><input name="braking_lookahead" type="checkbox">Use a Single Braking Lookahead Pass</label>
+                <label data-show="track_source=csv,skidpad solver=lap">Maximum Passes<input name="passes" type="number" min="1" max="30" step="1" required></label>
+                <label data-show="track_source=csv,skidpad solver=distance" hidden>Initial Speed (m/s)<input name="initial_speed" type="number" min="0" step="any" required></label>
+                <label class="wide check" data-show="track_source=csv,skidpad solver=distance" hidden><input name="braking_lookahead" type="checkbox">Use a Single Braking Lookahead Pass</label>
               </div>
             </details>
           </div>
@@ -166,7 +170,7 @@
       <div id="result" hidden>
         <p id="result-track" class="track-name"></p>
         <dl class="metrics">
-          <div><dt>Estimated Lap Time</dt><dd><output id="lap-time"></output><span>s</span></dd></div>
+          <div><dt id="time-label">Estimated Lap Time</dt><dd><output id="lap-time"></output><span>s</span></dd></div>
           <div><dt>Top Speed</dt><dd><output id="top-speed"></output><span>km/h</span></dd></div>
           <div><dt>Path Length</dt><dd><output id="track-length"></output><span>m</span></dd></div>
           <div><dt>Peak Lateral Acceleration</dt><dd><output id="peak-lateral"></output><span>g</span></dd></div>

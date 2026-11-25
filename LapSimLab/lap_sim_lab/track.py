@@ -40,6 +40,33 @@ class SectionGeometry:
     length: float
 
 
+def sample_straight(length: float, width: float, step: float) -> SectionGeometry:
+    count = example_sample_count(length, step, min_intervals=1)
+    x = np.linspace(0.0, length, count)
+    y = np.zeros(count)
+    return SectionGeometry(x, y, x, y + width / 2.0, x, y - width / 2.0, 0.0, length)
+
+
+def sample_circle(radius: float, width: float, step: float) -> SectionGeometry:
+    length = math.tau * radius
+    count = example_sample_count(length, step, min_intervals=4)
+    angle = np.linspace(0.0, math.tau, count)
+    dx, dy = np.cos(angle), np.sin(angle)
+    dx[-1], dy[-1] = dx[0], dy[0]
+    inner = max(radius - width / 2.0, 0.0)
+    outer = radius + width / 2.0
+    return SectionGeometry(
+        radius * dx, radius * dy, inner * dx, inner * dy, outer * dx, outer * dy, 1.0 / radius, length,
+    )
+
+
+def example_sample_count(length: float, step: float, *, min_intervals: int) -> int:
+    intervals = length / step
+    if intervals > MAX_SAMPLES - 1:
+        raise ValueError(localize("取樣點超過 {maximum:,}，請增大取樣間距", maximum=MAX_SAMPLES))
+    return max(math.ceil(intervals), min_intervals) + 1
+
+
 def read_sections(path: Path, width: float, step: float, *, check_deadline=None) -> list[SectionGeometry]:
     sections = []
     sample_count = 1

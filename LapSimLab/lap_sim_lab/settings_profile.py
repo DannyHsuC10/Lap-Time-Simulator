@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from .settings import MODEL_CHOICES, Settings
+from .settings import INPUT_CHOICES, Settings
 
 
 SCHEMA_VERSION = 1
@@ -78,8 +78,8 @@ def load_profile(path: Path) -> dict:
             if not isinstance(value, str) or not value.strip() or "\0" in value:
                 raise ValueError(f"「{key}」須為資料檔路徑。")
             value = folder / Path(value)
-        elif key in MODEL_CHOICES:
-            label, choices = MODEL_CHOICES[key]
+        elif key in INPUT_CHOICES:
+            label, choices = INPUT_CHOICES[key]
             if not isinstance(value, str) or value not in choices:
                 raise ValueError(f"無法辨識「{label}」的選項。")
         elif isinstance(default, bool):

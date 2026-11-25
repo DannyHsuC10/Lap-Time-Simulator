@@ -31,7 +31,7 @@ METHODS = {
         "quadratic": "使用 JSON 在零姿態下的 CL、CD 和下壓力分配。下壓力與風阻皆隨車速平方變化，側傾、俯仰和升沉對係數的影響為 0。",
     },
     "curvature_model": {
-        "raw": "直接用分段 CSV 的曲率。直線 κ = 0，圓弧 κ = ±1 / 半徑，正負代表左右彎。",
+        "raw": "使用賽道幾何的曲率。直線 κ = 0，圓弧 κ = ±1 / 半徑，正負代表左右彎。",
         "smooth": "依沿程距離平滑原始曲率，使用設定的高斯尺度。車輛能力計算使用平滑後的 κ，中心線座標和計時距離沿用原始路徑。",
     },
 }
@@ -45,7 +45,10 @@ def describe_models(options, inputs, files, *, aero_enabled, yaw_correction, bra
 
     point_mass = options["load_model"] == "point_mass"
     tire = options["tire_model"]
-    if options["solver"] == "lap":
+    source = options.get("track_source", "csv")
+    if source == "acceleration":
+        solver = section("solver", "從 0 m/s 向前積分，通過終點即停止計時。", selection="直線加速")
+    elif options["solver"] == "lap":
         solver = section(
             "solver",
             "在每個賽道點用二分法找彎速，再前掃加速、後掃煞車。反覆降低不符合限制的速度，直到最大速度改變達到門檻，或用完掃描次數。",
@@ -66,15 +69,20 @@ def describe_models(options, inputs, files, *, aero_enabled, yaw_correction, bra
         unlimited = False
     time_note = "計算時間不限。" if unlimited else f"計算時間上限 {time_limit} 秒，逾時停止本次計算。"
     solver = (solver[0], solver[1] + (
-        f"\n兩種求解都沿距離估算準穩態車輛能力。側向安全係數 {inputs['safety_factor']}，"
-        f"車速上限 {inputs['max_speed']} m/s。圈速為各段距離 ÷ 兩端平均車速的加總。"
+        f"\n求解沿距離估算準穩態車輛能力。側向安全係數 {inputs['safety_factor']}，"
+        f"車速上限 {inputs['max_speed']} m/s。計時為各段距離 ÷ 兩端平均車速的加總。"
         "\n縱向能力由輪胎剩餘抓地與馬達或煞車的上限共同決定，再用風阻、滾阻與車重參數求加減速度。"
         f"\n{time_note}"
     ))
 
+    track_description = {
+        "csv": f"賽道檔為 {files['track_path']}。",
+        "acceleration": f"直線長度為 {inputs.get('acceleration_length_m', '未填')} m。",
+        "skidpad": f"定圓半徑為 {inputs.get('skidpad_radius_m', '未填')} m。",
+    }[source]
     curvature = section(
         "curvature_model", METHODS["curvature_model"][options["curvature_model"]],
-        f"賽道檔：{files['track_path']}。取樣間距設定 {inputs['step_m']} m。"
+        f"{track_description}取樣間距設定 {inputs['step_m']} m。"
         + (f" 平滑尺度 {inputs['curvature_sigma_m']} m。" if options["curvature_model"] == "smooth" else ""),
     )
     tire_data = {

@@ -93,7 +93,7 @@ self.onmessage = async ({ data }) => {
       }
       const result = JSON.parse(solve(valuesJson, filesJson, report));
       const track = data.files.track_path;
-      self.postMessage({ type: "result", result, trackName: typeof track === "string" ? track : track.name });
+      self.postMessage({ type: "result", result, trackName: track?.name ?? result.trackName });
     } finally {
       solve.destroy();
       for (const path of uploads) pyodide.FS.unlink(path);

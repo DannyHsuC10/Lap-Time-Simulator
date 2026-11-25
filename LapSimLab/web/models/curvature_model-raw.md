@@ -45,4 +45,6 @@ $$
 
 The reported path length uses $s_{\mathrm{last}}$. For circular arcs, chord sampling can make it slightly shorter than the corresponding arc length. Track width is used to offset the centerline into track edges.
 
+For the generated examples, the solver uses the configured straight length or the exact skidpad circumference $2\pi R$. The skidpad follows one counterclockwise circle with curvature $1/R$.
+
 The cornering demand at a sample is $a_y=v^2\kappa$. Raw curvature can jump at segment boundaries. If yaw inertia correction is enabled, it uses the gradient of this sampled signal.

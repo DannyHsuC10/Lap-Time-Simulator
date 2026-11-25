@@ -14,7 +14,7 @@ from .planner import (
 from .settings import Settings
 from .signals import Signal, build_signals
 from .tire import build_tire_model
-from .track import read_sections, smooth_curvature
+from .track import read_sections, sample_circle, sample_straight, smooth_curvature
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,7 @@ class Result:
     time: np.ndarray
     signals: dict[str, Signal] = field(default_factory=dict)
     overspeed_points: int = 0
+    track_source: str = "csv"
 
     @property
     def lateral_acceleration(self):
@@ -56,8 +57,17 @@ def simulate(settings: Settings, progress=None, *, include_signals=True, check_c
             progress(message)
 
     report(localize("讀取賽道、輪胎與馬達資料"))
-    sections = read_sections(settings.track_path, settings.track_width, settings.step_m, check_deadline=check_deadline)
-    track = build_segment_speed_path(sections)
+    if settings.track_source == "csv":
+        sections = read_sections(settings.track_path, settings.track_width, settings.step_m, check_deadline=check_deadline)
+        track = build_segment_speed_path(sections)
+    else:
+        if settings.track_source == "acceleration":
+            geometry = sample_straight(settings.acceleration_length_m, settings.track_width, settings.step_m)
+        else:
+            geometry = sample_circle(settings.skidpad_radius_m, settings.track_width, settings.step_m)
+        track = build_segment_speed_path([geometry])
+        # The generated tracks have uniform, exact distances along their centerlines.
+        track = replace(track, s=np.linspace(0.0, geometry.length, len(track.s)))
     if not np.isfinite(track.s[-1]) or track.s[-1] <= 0:
         raise ValueError(localize("賽道路徑須有有限的正長度。"))
     if settings.curvature_model == "smooth":
@@ -96,7 +106,7 @@ def simulate(settings: Settings, progress=None, *, include_signals=True, check_c
             raise ValueError(localize("逐點訊號含有非有限值，請確認輸入參數及模型資料。"))
     overspeed_points = int(np.count_nonzero(plan.speed > plan.lateral_speed_limit + BRAKING_SPEED_TOLERANCE))
     check_deadline()
-    return Result(track, plan, time, signals, overspeed_points)
+    return Result(track, plan, time, signals, overspeed_points, settings.track_source)
 
 
 def _full_csv_columns(result: Result):

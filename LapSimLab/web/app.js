@@ -28,6 +28,7 @@ const conditionalFields = Array.from(fields.querySelectorAll("[data-show]"), (ro
 const fileRows = new Map();
 const projectFormat = "LapSimLab-Web";
 const projectVersion = 1;
+const trackSourceSettings = new Set(["track_source", "acceleration_length_m", "skidpad_radius_m"]);
 const inspectionInputs = {
   motor: new Set(["motor_model", "dc_voltage", "motor_path", "lp03_path"]),
   aero: new Set(["aero_model", "aero_enabled", "aero_path", "wheelbase", "front_track", "rear_track"]),
@@ -35,7 +36,7 @@ const inspectionInputs = {
     "tire_radius", "tire_stiffness", "rolling_coefficient", "mass", "wheelbase", "front_track", "rear_track",
     "cg_from_front", "cg_height", "front_heave_stiffness", "front_roll_stiffness", "rear_stiffness_ratio"]),
 };
-const trackOnlyInputs = new Set(["track_path", "track_width", "step_m", "curvature_model", "curvature_sigma_m",
+const trackOnlyInputs = new Set([...trackSourceSettings, "track_path", "track_width", "step_m", "curvature_model", "curvature_sigma_m",
   "solver", "passes", "initial_speed", "braking_lookahead"]);
 let schema;
 let worker;
@@ -69,6 +70,11 @@ function updateInputs() {
     example.href = new URL(`./inputs/${encodeURIComponent(filename)}`, import.meta.url);
     example.download = filename;
   }
+  const acceleration = form.elements.track_source.value === "acceleration";
+  run.textContent = acceleration ? "Calculate Acceleration" : "Calculate Lap";
+  byId("empty").textContent = acceleration ?
+    "Select Calculate Acceleration to see the elapsed time and per-sample signals." :
+    "Select Calculate Lap to see the estimated lap time and per-sample signals.";
   drawModelNotes();
 }
 
@@ -165,6 +171,10 @@ function readProject(project) {
   const settings = {};
   for (const key of Object.keys(schema.defaults)) {
     const field = form.elements[key];
+    if (trackSourceSettings.has(key) && !Object.hasOwn(project.settings, key)) {
+      settings[key] = String(schema.defaults[key]);
+      continue;
+    }
     const value = project.settings[key];
     const expected = field.type === "checkbox" ? "boolean" : "string";
     if (typeof value !== expected) throw new Error(`Invalid or missing setting: ${key}.`);
@@ -369,6 +379,7 @@ function showResult(data, trackName) {
   result = data;
   curves.setLapResult(data);
   byId("result-track").textContent = trackName;
+  byId("time-label").textContent = data.trackSource === "acceleration" ? "Acceleration Time" : "Estimated Lap Time";
   byId("lap-time").value = data.lapTime.toFixed(3);
   byId("top-speed").value = data.topSpeed.toFixed(1);
   byId("track-length").value = data.distance.at(-1).toFixed(1);
@@ -526,7 +537,7 @@ form.addEventListener("change", (event) => {
   if (event.target === vehicleSettingsFile) return;
   const field = event.target.name;
   const topic = field === "aero_enabled" ? "aero_model" : field;
-  if (Object.hasOwn(schema.models, topic)) notesTopic.value = topic;
+  if (topic !== "track_source" && Object.hasOwn(schema.models, topic)) notesTopic.value = topic;
   updateInputs();
   curves.invalidate();
   if (result && !run.disabled) setStatus("Settings changed. Run the calculation again to update the results.");
@@ -544,7 +555,7 @@ async function initialize() {
   }
   setupFileRows();
   for (const select of fields.querySelectorAll("select")) {
-    if (Object.hasOwn(schema.models, select.name)) {
+    if (select.name !== "track_source" && Object.hasOwn(schema.models, select.name)) {
       const title = select.closest("details").querySelector("summary").textContent.trim();
       notesTopic.add(new Option(title, select.name));
     }
