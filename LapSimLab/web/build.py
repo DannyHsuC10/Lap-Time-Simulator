@@ -12,7 +12,7 @@ import shutil
 import sys
 import tarfile
 from urllib.request import urlopen
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from english import ENGLISH
 from model_reference import render_references
@@ -29,6 +29,7 @@ MODULES = (
     "__init__", "aero", "analysis", "brake", "car", "ggv", "localization", "motor", "planner", "settings",
     "signals", "simulation", "suspension", "tire", "track",
 )
+WEB_ASSETS = ("icon.svg", "style.css", "app.js", "worker.js", "charts.js", "curves.js", "ggv-chart.js")
 PYODIDE_VERSION = "314.0.8"
 PYODIDE_SHA256 = "ff3e5f9d9bc8e98ff30b99515535fc24d375994f47a978c61975d653e162ca37"
 PYODIDE_FILES = ("pyodide.mjs", "pyodide.asm.mjs", "pyodide.asm.wasm", "pyodide-lock.json", "python_stdlib.zip")
@@ -90,22 +91,33 @@ def build(destination):
     }
     index = (WEB / "index.html").read_text(encoding="utf-8")
     index = render_references(index, WEB / "models", {key: schema["models"][key] for key in MODEL_CHOICES})
-    destination.mkdir(parents=True, exist_ok=True)
-    for name in ("icon.svg", "style.css", "app.js", "worker.js", "charts.js", "curves.js", "ggv-chart.js"):
-        shutil.copyfile(WEB / name, destination / name)
-    (destination / "index.html").write_text(index, encoding="utf-8")
-    (destination / "settings.json").write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
-    with ZipFile(destination / "solver.zip", "w", ZIP_DEFLATED) as bundle:
-        for name in MODULES:
-            path = Path("lap_sim_lab") / f"{name}.py"
-            bundle.write(PROJECT / path, path.as_posix())
-        bundle.write(WEB / "bridge.py", "bridge.py")
-        bundle.write(WEB / "english.py", "english.py")
-    inputs = destination / "inputs"
-    inputs.mkdir(exist_ok=True)
+
+    archive = BytesIO()
+    solver_sources = {f"lap_sim_lab/{name}.py": PROJECT / "lap_sim_lab" / f"{name}.py" for name in MODULES}
+    solver_sources.update({name: WEB / name for name in ("bridge.py", "english.py")})
+    with ZipFile(archive, "w") as bundle:
+        for name, source in solver_sources.items():
+            bundle.writestr(ZipInfo(name), source.read_bytes(), compress_type=ZIP_DEFLATED)
+
+    assets = {name: (WEB / name).read_bytes() for name in WEB_ASSETS}
+    assets["settings.json"] = json.dumps(schema, ensure_ascii=False).encode("utf-8")
+    assets["solver.zip"] = archive.getvalue()
     for source in (*data_files.values(), quadratic_example):
-        shutil.copyfile(source, inputs / source.name)
+        assets[f"inputs/{source.name}"] = source.read_bytes()
+
+    # Version the schema, worker and solver together so cached deployments cannot mix them.
+    digest = sha256()
+    for name, content in sorted(assets.items()):
+        digest.update(name.encode("utf-8") + b"\0" + sha256(content).digest())
+    asset_directory = f"assets-{digest.hexdigest()[:16]}"
+    for name, content in assets.items():
+        path = destination / asset_directory / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+
     build_runtime(destination / "pyodide")
+    index = index.replace("./assets/", f"./{asset_directory}/")
+    (destination / "index.html").write_text(index, encoding="utf-8")
 
 
 class PreviewHandler(SimpleHTTPRequestHandler):

@@ -1,12 +1,12 @@
-import { loadPyodide } from "./pyodide/pyodide.mjs";
+import { loadPyodide } from "../pyodide/pyodide.mjs";
 
-const runtimeURL = new URL("./pyodide/", import.meta.url).href;
+const runtimeURL = new URL("../pyodide/", import.meta.url).href;
 const inputDirectory = "/lapsim/input_data";
 const uploadDirectory = "/uploaded-inputs";
 let runtime;
 
 async function initialize() {
-  const archive = fetch(new URL("./solver.zip", self.location.href)).then((response) => {
+  const archive = fetch(new URL("./solver.zip", import.meta.url)).then((response) => {
     if (!response.ok) throw new Error(`Could not download the solver (HTTP ${response.status}).`);
     return response.arrayBuffer();
   });
