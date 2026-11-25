@@ -125,8 +125,8 @@ class LapSimLab(tk.Tk):
         header.pack(fill="x")
         ttk.Label(header, text="LapSimLab", style="Header.TLabel").pack(side="left")
         ttk.Label(header, text="FSAE  圈速模擬", style="Muted.TLabel").pack(side="left", padx=14)
-        ttk.Button(header, text="儲存設定", command=self.save_settings).pack(side="right")
-        ttk.Button(header, text="載入設定", command=self.load_settings).pack(side="right", padx=(0, 8))
+        ttk.Button(header, text="匯出 JSON", command=self.save_settings).pack(side="right")
+        ttk.Button(header, text="匯入 JSON", command=self.load_settings).pack(side="right", padx=(0, 8))
         ttk.Button(header, text="車輛控制模擬", command=self.open_control_sim).pack(side="right", padx=(0, 8))
 
         body = ttk.Frame(self, padding=(19, 2, 19, 0))

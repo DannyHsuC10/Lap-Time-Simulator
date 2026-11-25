@@ -6,6 +6,9 @@ const form = byId("settings");
 const fields = byId("fields");
 const run = byId("run");
 const reset = byId("reset");
+const importJson = byId("import-json");
+const exportJson = byId("export-json");
+const projectFile = byId("project-file");
 const vehicleSettingsFile = byId("vehicle-settings-file");
 const cancel = byId("cancel");
 const download = byId("download");
@@ -23,6 +26,8 @@ const conditionalFields = Array.from(fields.querySelectorAll("[data-show]"), (ro
   conditions: row.dataset.show.split(" ").map((term) => term.split("=")),
 }));
 const fileRows = new Map();
+const projectFormat = "LapSimLab-Web";
+const projectVersion = 1;
 const inspectionInputs = {
   motor: new Set(["motor_model", "dc_voltage", "motor_path", "lp03_path"]),
   aero: new Set(["aero_model", "aero_enabled", "aero_path", "wheelbase", "front_track", "rear_track"]),
@@ -111,11 +116,11 @@ function setupFileRows() {
   }
 }
 
-function applySettings(values) {
+function applySettings(values, { displayValues = false } = {}) {
   for (const [key, value] of Object.entries(values)) {
     const field = form.elements[key];
     if (field.type === "checkbox") field.checked = value;
-    else field.value = schema.percentages.includes(key) ? 100 * value : value;
+    else field.value = !displayValues && schema.percentages.includes(key) ? 100 * value : value;
   }
   updateInputs();
 }
@@ -124,6 +129,113 @@ function restoreDefaults() {
   for (const { input } of fileRows.values()) input.value = "";
   applySettings(schema.defaults);
 }
+
+function encodeFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({
+      name: file.name,
+      base64: reader.result.slice(reader.result.indexOf(",") + 1),
+    });
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function snapshotProject() {
+  const settings = Object.fromEntries(Object.keys(schema.defaults).map((key) => {
+    const field = form.elements[key];
+    return [key, field.type === "checkbox" ? field.checked : field.value];
+  }));
+  const files = {};
+  for (const [key, { input }] of fileRows) {
+    const file = input.files[0];
+    if (file) files[key] = await encodeFile(file);
+  }
+  return { application: projectFormat, schema_version: projectVersion, settings, files };
+}
+
+function readProject(project) {
+  const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+  if (project?.application !== projectFormat || !isObject(project.settings) || !isObject(project.files)) {
+    throw new Error("Choose a LapSimLab web settings export.");
+  }
+  if (project.schema_version !== projectVersion) throw new Error("Unsupported settings file version.");
+
+  const settings = {};
+  for (const key of Object.keys(schema.defaults)) {
+    const field = form.elements[key];
+    const value = project.settings[key];
+    const expected = field.type === "checkbox" ? "boolean" : "string";
+    if (typeof value !== expected) throw new Error(`Invalid or missing setting: ${key}.`);
+    if (field.type === "number") {
+      const probe = document.createElement("input");
+      probe.type = "number";
+      probe.value = value;
+      if (probe.value !== value) throw new Error(`Invalid number: ${key}.`);
+    }
+    if (Object.hasOwn(schema.models, key) && !Object.hasOwn(schema.models[key], value)) {
+      throw new Error(`Unknown model option: ${key}.`);
+    }
+    settings[key] = value;
+  }
+
+  const files = new Map();
+  for (const [key, entry] of Object.entries(project.files)) {
+    if (!fileRows.has(key) || !isObject(entry) || typeof entry.name !== "string" ||
+        !entry.name || typeof entry.base64 !== "string") {
+      throw new Error(`Invalid attachment: ${key}.`);
+    }
+    let bytes;
+    try {
+      bytes = Uint8Array.from(atob(entry.base64), (character) => character.charCodeAt(0));
+    } catch {
+      throw new Error(`Could not decode attachment: ${key}.`);
+    }
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([bytes], entry.name));
+    files.set(key, transfer.files);
+  }
+  return { settings, files };
+}
+
+exportJson.addEventListener("click", async () => {
+  if (job || !schema) return;
+  setJob("save-project");
+  try {
+    const contents = JSON.stringify(await snapshotProject(), null, 2) + "\n";
+    downloadFile(contents, "application/json", "lapsimlab-settings.json");
+    setStatus("Settings JSON exported.");
+  } catch (error) {
+    setStatus(`Could not export settings. ${error.message}`, true);
+  } finally {
+    setJob();
+  }
+});
+
+importJson.addEventListener("click", () => projectFile.click());
+projectFile.addEventListener("change", async () => {
+  const file = projectFile.files[0];
+  projectFile.value = "";
+  if (!file || job || !schema) return;
+  setJob("load-project");
+  try {
+    const { settings, files } = readProject(JSON.parse(await file.text()));
+    for (const [key, { input }] of fileRows) {
+      if (files.has(key)) input.files = files.get(key);
+      else input.value = "";
+    }
+    applySettings(settings, { displayValues: true });
+    curves.invalidate();
+    clearResult();
+    setStatus(`Imported ${file.name}. Calculate the lap to see results for these settings.`);
+  } catch (error) {
+    const message = error instanceof SyntaxError ? "The file does not contain valid JSON." : error.message;
+    setStatus(`Could not import settings. ${message}`, true);
+  } finally {
+    setJob();
+  }
+});
 
 function vehicleSettings(project) {
   if (project?.application !== "VehicleInitialSizingLab-DynamicsExport" || ![2, 3].includes(project.schema_version)) {
@@ -224,6 +336,8 @@ function setJob(nextJob, tool) {
   fields.disabled = busy;
   run.disabled = busy;
   reset.disabled = busy;
+  importJson.disabled = busy;
+  exportJson.disabled = busy;
   cancel.hidden = job !== "run" && job !== "inspect";
   byId("ggv-cancel").hidden = tool !== "ggv";
   download.disabled = busy || !result;
@@ -275,11 +389,11 @@ function showResult(data, trackName) {
   drawResult();
 }
 
-function downloadCsv(contents) {
-  const url = URL.createObjectURL(new Blob([contents], { type: "text/csv;charset=utf-8" }));
+function downloadFile(contents, type, filename) {
+  const url = URL.createObjectURL(new Blob([contents], { type }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = "lapsim-result.csv";
+  link.download = filename;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -306,7 +420,7 @@ function getWorker(inspect = false) {
         setStatus(data.tool === "ggv" ? "GGV calculation complete." : "Plot updated.");
         break;
       case "csv":
-        downloadCsv(data.contents);
+        downloadFile(data.contents, "text/csv;charset=utf-8", "lapsim-result.csv");
         setJob();
         setStatus("CSV ready.");
         break;
